@@ -50,6 +50,7 @@ class _SnapShotState extends State<SnapshotPage> {
                 ),
                 onPressed: () async {
                   final imageBytes = await _mapController?.takeSnapshot();
+                  if (!mounted) return;
                   setState(() {
                     _imageBytes = imageBytes;
                   });

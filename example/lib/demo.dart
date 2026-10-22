@@ -1,68 +1,43 @@
 import 'package:amap_map_example/data/demos.dart';
-import 'package:amap_map_example/main.dart';
 import 'package:flutter/material.dart';
 
-class DemoPage extends StatefulWidget {
-  const DemoPage({
-    super.key,
-    required this.slug,
-  });
-
+class DemoPage extends StatelessWidget {
+  const DemoPage({super.key, required this.slug});
   final String? slug;
 
   @override
-  State<DemoPage> createState() => _DemoPageState();
-}
-
-class _DemoPageState extends State<DemoPage> {
-  late Map<String?, Demo> slugToDemoMap;
-
-  @override
-  void didChangeDependencies() {
-    super.didChangeDependencies();
-    slugToDemoMap = slugToDemo(context);
-  }
-
-  @override
   Widget build(BuildContext context) {
-    if (widget.slug == null || !slugToDemoMap.containsKey(widget.slug)) {
-      // Return to root if invalid slug.
-      Navigator.of(context).pop();
+    final Demo? demo = slugToDemo(context)[slug];
+    if (demo == null) {
+      return Scaffold(
+        appBar: AppBar(title: const Text('未找到测试')),
+        body: const Center(child: Text('请返回首页选择测试项目。')),
+      );
     }
-    return ScaffoldMessenger(
-        child: AMapDemoPage(
-      restorationId: widget.slug!,
-      demo: slugToDemoMap[widget.slug]!,
-    ));
-  }
-}
-
-class AMapDemoPage extends StatefulWidget {
-  const AMapDemoPage({
-    super.key,
-    required this.restorationId,
-    required this.demo,
-  });
-
-  final String restorationId;
-  final Demo demo;
-
-  @override
-  State<StatefulWidget> createState() => _AMapDemoPageState(demo);
-}
-
-class _AMapDemoPageState extends State<AMapDemoPage> {
-  _AMapDemoPageState(this.demo);
-
-  final Demo demo;
-
-  @override
-  Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: Text(demo.title)),
-      body: SafeArea(
-        child: Builder(builder: demo.configurations.first.buildRoute),
+      appBar: AppBar(
+        title: Text(demo.title),
+        actions: <Widget>[
+          IconButton(
+            tooltip: '测试步骤',
+            icon: const Icon(Icons.help_outline),
+            onPressed: () => showDialog<void>(
+              context: context,
+              builder: (BuildContext context) => AlertDialog(
+                title: Text(demo.title),
+                content: SingleChildScrollView(child: Text(demo.steps)),
+                actions: <Widget>[
+                  TextButton(
+                      onPressed: () => Navigator.pop(context),
+                      child: const Text('知道了')),
+                ],
+              ),
+            ),
+          ),
+        ],
       ),
+      body: SafeArea(
+          child: Builder(builder: demo.configurations.first.buildRoute)),
     );
   }
 }

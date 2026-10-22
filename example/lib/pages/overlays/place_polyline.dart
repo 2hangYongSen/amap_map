@@ -56,6 +56,7 @@ class _State extends State<PolylineDemoPage> {
     if (selectedPolyline != null) {
       setState(() {
         _polylines.remove(selectedPolylineId);
+        selectedPolylineId = null;
       });
     } else {
       print('无选中的Polyline，无法删除');
@@ -125,7 +126,8 @@ class _State extends State<PolylineDemoPage> {
   }
 
   void _changeJointType() {
-    final Polyline polyline = _polylines[selectedPolylineId]!;
+    final Polyline? polyline = _polylines[selectedPolylineId];
+    if (polyline == null) return;
     JoinType joinType = polyline.joinType;
     if (joinType.index < JoinType.round.index) {
       joinType = JoinType.values[joinType.index + 1];
@@ -139,7 +141,8 @@ class _State extends State<PolylineDemoPage> {
   }
 
   Future<void> _changeAlpha() async {
-    final Polyline polyline = _polylines[selectedPolylineId]!;
+    final Polyline? polyline = _polylines[selectedPolylineId];
+    if (polyline == null) return;
     final double current = polyline.alpha;
     setState(() {
       _polylines[selectedPolylineId!] = polyline.copyWith(
@@ -149,7 +152,8 @@ class _State extends State<PolylineDemoPage> {
   }
 
   Future<void> _toggleVisible(value) async {
-    final Polyline polyline = _polylines[selectedPolylineId]!;
+    final Polyline? polyline = _polylines[selectedPolylineId];
+    if (polyline == null) return;
     setState(() {
       _polylines[selectedPolylineId!] = polyline.copyWith(
         visibleParam: value,
@@ -158,7 +162,8 @@ class _State extends State<PolylineDemoPage> {
   }
 
   void _changeColor() {
-    final Polyline polyline = _polylines[selectedPolylineId]!;
+    final Polyline? polyline = _polylines[selectedPolylineId];
+    if (polyline == null) return;
     setState(() {
       _polylines[selectedPolylineId!] = polyline.copyWith(
         colorParam: colors[++colorsIndex % colors.length],
@@ -167,7 +172,8 @@ class _State extends State<PolylineDemoPage> {
   }
 
   void _changePoints() {
-    final Polyline polyline = _polylines[selectedPolylineId]!;
+    final Polyline? polyline = _polylines[selectedPolylineId];
+    if (polyline == null) return;
     List<LatLng> currentPoints = polyline.points;
     List<LatLng> newPoints = <LatLng>[];
     newPoints.addAll(currentPoints);

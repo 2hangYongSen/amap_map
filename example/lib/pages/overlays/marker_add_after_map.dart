@@ -75,7 +75,8 @@ class _BodyState extends State<MarkerAddAfterMapPage> {
           ),
           Expanded(
             flex: 1,
-            child: _createMyFloatButton('添加marker', _addMarker),
+            child: _createMyFloatButton(
+                '添加 Marker（当前 ${_markers.length} 个）', _addMarker),
           ),
         ],
       ),

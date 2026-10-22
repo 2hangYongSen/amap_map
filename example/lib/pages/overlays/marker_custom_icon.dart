@@ -17,7 +17,9 @@ class _BodyState extends State<MarkerCustomIconPage> {
   static const String _startIconPath = 'assets/start.png';
   static const String _endIconPath = 'assets/end.png';
   String _iconPath = _startIconPath;
-  void _initMarker(BuildContext context) async {
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
     if (_hasInitMarker) {
       return;
     }
@@ -66,7 +68,6 @@ class _BodyState extends State<MarkerCustomIconPage> {
 
   @override
   Widget build(BuildContext context) {
-    _initMarker(context);
     final AMapWidget amap = AMapWidget(
       markers: Set<Marker>.of(_initMarkerMap.values),
     );

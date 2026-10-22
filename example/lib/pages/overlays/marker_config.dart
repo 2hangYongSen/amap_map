@@ -1,7 +1,3 @@
-import 'dart:async';
-import 'dart:typed_data';
-import 'dart:ui';
-
 import 'package:amap_map_example/widgets/amap_switch_button.dart';
 import 'package:flutter/material.dart';
 
@@ -37,41 +33,6 @@ class _State extends State<MarkerConfigDemoPage> {
     }
   }
 
-  ///通过BitmapDescriptor.fromAssetImage的方式获取图片
-  Future<void> _createMarkerImageFromAsset(BuildContext context) async {
-    if (_markerIcon == null) {
-      final ImageConfiguration imageConfiguration =
-          createLocalImageConfiguration(context);
-      BitmapDescriptor.fromAssetImage(imageConfiguration, 'assets/start.png')
-          .then(_updateBitmap);
-    }
-  }
-
-  ///通过BitmapDescriptor.fromBytes的方式获取图片
-  Future<void> _createMarkerImageFromBytes(BuildContext context) async {
-    final Completer<BitmapDescriptor> bitmapIcon =
-        Completer<BitmapDescriptor>();
-    final ImageConfiguration config = createLocalImageConfiguration(context);
-
-    const AssetImage('assets/end.png')
-        .resolve(config)
-        .addListener(ImageStreamListener((ImageInfo image, bool sync) async {
-      final ByteData bytes =
-          (await image.image.toByteData(format: ImageByteFormat.png))!;
-      final BitmapDescriptor bitmap =
-          BitmapDescriptor.fromBytes(bytes.buffer.asUint8List());
-      bitmapIcon.complete(bitmap);
-    }));
-
-    bitmapIcon.future.then((BitmapDescriptor value) => _updateBitmap(value));
-  }
-
-  void _updateBitmap(BitmapDescriptor bitmap) {
-    setState(() {
-      _markerIcon = bitmap;
-    });
-  }
-
   void _add() {
     final int markerCount = _markers.length;
     LatLng markPostion = LatLng(
@@ -93,7 +54,8 @@ class _State extends State<MarkerConfigDemoPage> {
 
   void _onMarkerTapped(String markerId) {
     final Marker? tappedMarker = _markers[markerId];
-    final String? title = tappedMarker!.infoWindow.title;
+    if (!mounted || tappedMarker == null) return;
+    final String? title = tappedMarker.infoWindow.title;
     print('$title 被点击了,markerId: $markerId');
     setState(() {
       selectedMarkerId = markerId;
@@ -102,7 +64,8 @@ class _State extends State<MarkerConfigDemoPage> {
 
   void _onMarkerDragEnd(String markerId, LatLng position) {
     final Marker? tappedMarker = _markers[markerId];
-    final String? title = tappedMarker!.infoWindow.title;
+    if (!mounted || tappedMarker == null) return;
+    final String? title = tappedMarker.infoWindow.title;
     print('$title markerId: $markerId 被拖拽到了: $position');
   }
 
@@ -112,6 +75,7 @@ class _State extends State<MarkerConfigDemoPage> {
     if (selectedMarker != null) {
       setState(() {
         _markers.remove(selectedMarkerId);
+        selectedMarkerId = null;
       });
     } else {
       print('无选中的Marker，无法删除');
@@ -122,14 +86,15 @@ class _State extends State<MarkerConfigDemoPage> {
     if (_markers.isNotEmpty) {
       setState(() {
         _markers.clear();
-        selectedMarkerId = null.toString();
+        selectedMarkerId = null;
       });
     }
   }
 
   void _changeInfo() async {
-    final Marker marker = _markers[selectedMarkerId]!;
-    final String newTitle = '${marker.infoWindow.title!}*';
+    final Marker? marker = _markers[selectedMarkerId];
+    if (marker == null) return;
+    final String newTitle = '${marker.infoWindow.title ?? ''}*';
     if (selectedMarkerId != null) {
       setState(() {
         _markers[selectedMarkerId!] = marker.copyWith(
@@ -142,7 +107,8 @@ class _State extends State<MarkerConfigDemoPage> {
   }
 
   void _changeAnchor() {
-    final Marker marker = _markers[selectedMarkerId]!;
+    final Marker? marker = _markers[selectedMarkerId];
+    if (marker == null) return;
     final Offset currentAnchor = marker.anchor;
     double dx = 0;
     double dy = 0;
@@ -165,7 +131,8 @@ class _State extends State<MarkerConfigDemoPage> {
   }
 
   void _changePosition() {
-    final Marker marker = _markers[selectedMarkerId]!;
+    final Marker? marker = _markers[selectedMarkerId];
+    if (marker == null) return;
     final LatLng current = marker.position;
     final Offset offset = Offset(
       mapCenter.latitude - current.latitude,
@@ -182,7 +149,8 @@ class _State extends State<MarkerConfigDemoPage> {
   }
 
   Future<void> _changeAlpha() async {
-    final Marker marker = _markers[selectedMarkerId]!;
+    final Marker? marker = _markers[selectedMarkerId];
+    if (marker == null) return;
     final double current = marker.alpha;
     setState(() {
       _markers[selectedMarkerId!] = marker.copyWith(
@@ -192,7 +160,8 @@ class _State extends State<MarkerConfigDemoPage> {
   }
 
   Future<void> _changeRotation() async {
-    final Marker marker = _markers[selectedMarkerId]!;
+    final Marker? marker = _markers[selectedMarkerId];
+    if (marker == null) return;
     final double current = marker.rotation;
     setState(() {
       _markers[selectedMarkerId!] = marker.copyWith(
@@ -202,7 +171,8 @@ class _State extends State<MarkerConfigDemoPage> {
   }
 
   Future<void> _toggleVisible(value) async {
-    final Marker marker = _markers[selectedMarkerId]!;
+    final Marker? marker = _markers[selectedMarkerId];
+    if (marker == null) return;
     setState(() {
       _markers[selectedMarkerId!] = marker.copyWith(
         visibleParam: value,
@@ -211,7 +181,8 @@ class _State extends State<MarkerConfigDemoPage> {
   }
 
   Future<void> _toggleDraggable(value) async {
-    final Marker marker = _markers[selectedMarkerId]!;
+    final Marker? marker = _markers[selectedMarkerId];
+    if (marker == null) return;
     setState(() {
       _markers[selectedMarkerId!] = marker.copyWith(
         draggableParam: value,
@@ -234,11 +205,6 @@ class _State extends State<MarkerConfigDemoPage> {
     ///以下几种获取自定图片的方式使用其中一种即可。
     //最简单的方式
     _markerIcon ??= BitmapDescriptor.fromIconPath('assets/location_marker.png');
-
-    //通过BitmapDescriptor.fromAssetImage的方式获取图片
-    _createMarkerImageFromAsset(context);
-    //通过BitmapDescriptor.fromBytes的方式获取图片
-    _createMarkerImageFromBytes(context);
 
     final AMapWidget map = AMapWidget(
       onMapCreated: _onMapCreated,
@@ -267,26 +233,28 @@ class _State extends State<MarkerConfigDemoPage> {
                         children: <Widget>[
                           TextButton(
                             onPressed: _add,
-                            child: const Text('添加'),
+                            child: Text('添加（当前 ${_markers.length} 个）'),
                           ),
                           TextButton(
-                            onPressed:
-                                (selectedMarkerId == null) ? null : _remove,
+                            onPressed: (!_markers.containsKey(selectedMarkerId))
+                                ? null
+                                : _remove,
                             child: const Text('移除'),
                           ),
                           TextButton(
-                            onPressed:
-                                (selectedMarkerId == null) ? null : _changeInfo,
+                            onPressed: (!_markers.containsKey(selectedMarkerId))
+                                ? null
+                                : _changeInfo,
                             child: const Text('更新InfoWidow'),
                           ),
                           TextButton(
-                            onPressed: (selectedMarkerId == null)
+                            onPressed: (!_markers.containsKey(selectedMarkerId))
                                 ? null
                                 : _changeAnchor,
                             child: const Text('修改锚点'),
                           ),
                           TextButton(
-                            onPressed: (selectedMarkerId == null)
+                            onPressed: (!_markers.containsKey(selectedMarkerId))
                                 ? null
                                 : _changeAlpha,
                             child: const Text('修改透明度'),
@@ -301,26 +269,28 @@ class _State extends State<MarkerConfigDemoPage> {
                           ),
                           AMapSwitchButton(
                             label: const Text('允许拖动'),
-                            onSwitchChanged: (selectedMarkerId == null)
-                                ? null
-                                : _toggleDraggable,
+                            onSwitchChanged:
+                                (!_markers.containsKey(selectedMarkerId))
+                                    ? null
+                                    : _toggleDraggable,
                             defaultValue: false,
                           ),
                           AMapSwitchButton(
                             label: const Text('显示'),
-                            onSwitchChanged: (selectedMarkerId == null)
-                                ? null
-                                : _toggleVisible,
+                            onSwitchChanged:
+                                (!_markers.containsKey(selectedMarkerId))
+                                    ? null
+                                    : _toggleVisible,
                             defaultValue: true,
                           ),
                           TextButton(
-                            onPressed: (selectedMarkerId == null)
+                            onPressed: (!_markers.containsKey(selectedMarkerId))
                                 ? null
                                 : _changePosition,
                             child: const Text('修改坐标'),
                           ),
                           TextButton(
-                            onPressed: (selectedMarkerId == null)
+                            onPressed: (!_markers.containsKey(selectedMarkerId))
                                 ? null
                                 : _changeRotation,
                             child: const Text('修改旋转角度'),

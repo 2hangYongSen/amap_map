@@ -30,6 +30,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
+import io.flutter.FlutterInjector;
 import io.flutter.embedding.engine.loader.FlutterLoader;
 
 /**
@@ -44,14 +45,9 @@ public class ConvertUtil {
     private static final int[] LocationTypeMap = new int[]{MyLocationStyle.LOCATION_TYPE_SHOW, MyLocationStyle.LOCATION_TYPE_FOLLOW, MyLocationStyle.LOCATION_TYPE_LOCATION_ROTATE};
     public static float density;
     private static String apiKey;
-    private static FlutterLoader flutterLoader;  // For asset loading
-
-    public static void initialize(Context context) {
-        flutterLoader = new FlutterLoader();
-        if (!flutterLoader.initialized()) {
-            flutterLoader.startInitialization(context);
-            flutterLoader.ensureInitializationComplete(context, null);
-        }
+    // Reuse the engine's loader and its configured asset path.
+    private static FlutterLoader flutterLoader() {
+        return FlutterInjector.instance().flutterLoader();
     }
 
     public static void setPrivacyStatement(Context context, Object object) {
@@ -374,8 +370,9 @@ public class ConvertUtil {
             return null;
         }
 
-        if (location.getAltitude() > 90 ||
-                location.getAltitude() < -90 ||
+        if (Double.isNaN(location.getLatitude()) || Double.isNaN(location.getLongitude()) ||
+                location.getLatitude() > 90 ||
+                location.getLatitude() < -90 ||
                 location.getLongitude() > 180 ||
                 location.getLongitude() < -180) {
             return null;
@@ -405,15 +402,15 @@ public class ConvertUtil {
             case "fromAsset":
                 if (data.size() == 2) {
                     return BitmapDescriptorFactory.fromAsset(
-                            flutterLoader.getLookupKeyForAsset(toString(data.get(1))));
+                            flutterLoader().getLookupKeyForAsset(toString(data.get(1))));
                 } else {
                     return BitmapDescriptorFactory.fromAsset(
-                            flutterLoader.getLookupKeyForAsset(toString(data.get(1)), toString(data.get(2))));
+                            flutterLoader().getLookupKeyForAsset(toString(data.get(1)), toString(data.get(2))));
                 }
             case "fromAssetImage":
                 if (data.size() == 3) {
                     return BitmapDescriptorFactory.fromAsset(
-                            flutterLoader.getLookupKeyForAsset(toString(data.get(1))));
+                            flutterLoader().getLookupKeyForAsset(toString(data.get(1))));
                 } else {
                     throw new IllegalArgumentException(
                             "'fromAssetImage' Expected exactly 3 arguments, got: " + data.size());

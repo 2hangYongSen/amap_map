@@ -63,6 +63,7 @@ class _State extends State<PolygonDemoPage> {
       //有选中的Marker
       setState(() {
         _polygons.remove(selectedPolygonId);
+        selectedPolygonId = null;
       });
     }
   }
@@ -87,7 +88,8 @@ class _State extends State<PolygonDemoPage> {
   }
 
   void _changeColors() {
-    final Polygon polygon = _polygons[selectedPolygonId]!;
+    final Polygon? polygon = _polygons[selectedPolygonId];
+    if (polygon == null) return;
     setState(() {
       _polygons[selectedPolygonId!] = polygon.copyWith(
         strokeColorParam: colors[++colorsIndex % colors.length],
@@ -97,7 +99,8 @@ class _State extends State<PolygonDemoPage> {
   }
 
   Future<void> _toggleVisible(value) async {
-    final Polygon polygon = _polygons[selectedPolygonId]!;
+    final Polygon? polygon = _polygons[selectedPolygonId];
+    if (polygon == null) return;
     setState(() {
       _polygons[selectedPolygonId!] = polygon.copyWith(
         visibleParam: value,
@@ -106,7 +109,8 @@ class _State extends State<PolygonDemoPage> {
   }
 
   void _changePoints() {
-    final Polygon polygon = _polygons[selectedPolygonId]!;
+    final Polygon? polygon = _polygons[selectedPolygonId];
+    if (polygon == null) return;
     List<LatLng> currentPoints = polygon.points;
     List<LatLng> newPoints = <LatLng>[];
     newPoints.addAll(currentPoints);

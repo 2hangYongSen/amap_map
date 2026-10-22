@@ -56,6 +56,10 @@ class _State extends State<PolylineTextureDemoPage> {
   @override
   Widget build(BuildContext context) {
     final AMapWidget map = AMapWidget(
+      initialCameraPosition: const CameraPosition(
+        target: LatLng(39.95, 116.306),
+        zoom: 12,
+      ),
       onMapCreated: _onMapCreated,
       polylines: Set<Polyline>.of(_polylines.values),
     );
@@ -92,7 +96,7 @@ class _State extends State<PolylineTextureDemoPage> {
                     return Colors.blue;
                   }),
                 ),
-                child: Text('添加纹理线'),
+                child: Text('添加纹理线（当前 ${_polylines.length} 条）'),
               )),
         ],
       ),
