@@ -1,0 +1,44 @@
+{
+  "version": 1,
+  "description": "原生点位共享夹具，Dart、JVM、XCTest 共用。S2 阶段只含 R-NORM-2 舍入部分，几何与省略部分由后续阶段追加。",
+  "normalization": {
+    "lengthScale": 64,
+    "ratioScale": 1024,
+    "rule": "units = round(v * scale)，远离零的四舍五入",
+    "cases": [
+      {"name": "零", "kind": "length", "input": 0.0, "units": 0},
+      {"name": "负零", "kind": "length", "input": -0.0, "units": 0},
+      {"name": "1/128 刚好在一半，向外进位", "kind": "length", "input": 0.0078125, "units": 1},
+      {"name": "3/128 刚好在一半，向外进位", "kind": "length", "input": 0.0234375, "units": 2},
+      {"name": "-1/128 向远离零进位", "kind": "length", "input": -0.0078125, "units": -1},
+      {"name": "-3/128 向远离零进位", "kind": "length", "input": -0.0234375, "units": -2},
+      {"name": "1/256 不到一半，舍去", "kind": "length", "input": 0.00390625, "units": 0},
+      {"name": "-1/256 不到一半，舍去", "kind": "length", "input": -0.00390625, "units": 0},
+      {"name": "1e-9 视为 0", "kind": "length", "input": 1e-9, "units": 0},
+      {"name": "0.001 的字号退化为 0", "kind": "length", "input": 0.001, "units": 0},
+      {"name": "1 恰为整数", "kind": "length", "input": 1.0, "units": 64},
+      {"name": "0.1+0.2 与 0.3 同组", "kind": "length", "input": 0.30000000000000004, "units": 19},
+      {"name": "0.3", "kind": "length", "input": 0.3, "units": 19},
+      {"name": "59.995 落在 3840", "kind": "length", "input": 59.995, "units": 3840},
+      {"name": "60.004 落在 3840", "kind": "length", "input": 60.004, "units": 3840},
+      {"name": "13", "kind": "length", "input": 13.0, "units": 832},
+      {"name": "-2.5", "kind": "length", "input": -2.5, "units": -160},
+
+      {"name": "锚点 0", "kind": "ratio", "input": 0.0, "units": 0},
+      {"name": "锚点 0.5", "kind": "ratio", "input": 0.5, "units": 512},
+      {"name": "锚点 1", "kind": "ratio", "input": 1.0, "units": 1024},
+      {"name": "1/2048 刚好在一半，向外进位", "kind": "ratio", "input": 0.00048828125, "units": 1},
+      {"name": "3/2048 刚好在一半，向外进位", "kind": "ratio", "input": 0.00146484375, "units": 2},
+      {"name": "-1/2048 向远离零进位", "kind": "ratio", "input": -0.00048828125, "units": -1},
+      {"name": "1/4096 不到一半，舍去", "kind": "ratio", "input": 0.000244140625, "units": 0},
+      {"name": "像素比 2.625", "kind": "ratio", "input": 2.625, "units": 2688},
+      {"name": "像素比 3", "kind": "ratio", "input": 3.0, "units": 3072},
+      {"name": "像素比 3.5", "kind": "ratio", "input": 3.5, "units": 3584}
+    ],
+    "sameGroups": [
+      {"name": "浮点误差同组", "kind": "length", "inputs": [0.3, 0.30000000000000004, 0.3000000001]},
+      {"name": "maxWidth 59.995 与 60.004", "kind": "length", "inputs": [59.995, 60.004]},
+      {"name": "锚点微小误差同组", "kind": "ratio", "inputs": [0.5, 0.5000001, 0.4999999]}
+    ]
+  }
+}
