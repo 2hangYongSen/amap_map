@@ -6,6 +6,7 @@ import 'dart:ui' show Offset;
 import 'package:amap_map/src/types/base_overlay.dart';
 import 'package:x_amap_base/x_amap_base.dart';
 import 'bitmap.dart';
+import 'native_marker.dart';
 
 /// Marker拖动回调
 typedef MarkerDragEndCallback = void Function(String id, LatLng endPosition);
@@ -78,6 +79,7 @@ class InfoWindow {
 /// 点覆盖物的类
 class Marker extends BaseOverlay {
   Marker({
+    String? markerId,
     required this.position,
     double alpha = 1.0,
     Offset anchor = const Offset(0.5, 1.0),
@@ -91,6 +93,9 @@ class Marker extends BaseOverlay {
     this.zIndex = 0.0,
     this.onTap,
     this.onDragEnd,
+    this.nativePresentation,
+    this.selectable = false,
+    this.selectedZIndex,
   })  : alpha =
             // ignore: unnecessary_null_comparison
             (alpha != null ? (alpha < 0 ? 0 : (alpha > 1 ? 1 : alpha)) : alpha),
@@ -103,7 +108,12 @@ class Marker extends BaseOverlay {
                     anchor.dy > 1)
                 ? const Offset(0.5, 1.0)
                 : anchor)),
-        super();
+        super() {
+    // 非空时作为 id；空字符串由 setIdForCopy 抛出 ArgumentError
+    if (markerId != null) {
+      setIdForCopy(markerId);
+    }
+  }
 
   /// 透明度
   final double alpha;
@@ -148,6 +158,15 @@ class Marker extends BaseOverlay {
   /// Marker被拖拽结束的回调
   final MarkerDragEndCallback? onDragEnd;
 
+  /// 原生渲染配置。非空时由原生绘制，[icon] 被忽略。
+  final NativeMarkerPresentation? nativePresentation;
+
+  /// 是否可被原生单选，默认为false
+  final bool selectable;
+
+  /// 选中态的 zIndex，为空表示沿用 [zIndex]
+  final double? selectedZIndex;
+
   /// copy的真正复制的参数，主要用于需要修改某个属性参数时使用
   Marker copyWith({
     double? alphaParam,
@@ -160,8 +179,14 @@ class Marker extends BaseOverlay {
     LatLng? positionParam,
     double? rotationParam,
     bool? visibleParam,
+    double? zIndexParam,
     ArgumentCallback<String?>? onTapParam,
     MarkerDragEndCallback? onDragEndParam,
+    NativeMarkerPresentation? nativePresentationParam,
+    bool clearNativePresentation = false,
+    bool? selectableParam,
+    double? selectedZIndexParam,
+    bool clearSelectedZIndex = false,
   }) {
     Marker copyMark = Marker(
       alpha: alphaParam ?? alpha,
@@ -174,9 +199,16 @@ class Marker extends BaseOverlay {
       position: positionParam ?? position,
       rotation: rotationParam ?? rotation,
       visible: visibleParam ?? visible,
-      zIndex: zIndex,
+      zIndex: zIndexParam ?? zIndex,
       onTap: onTapParam ?? onTap,
       onDragEnd: onDragEndParam ?? onDragEnd,
+      nativePresentation: clearNativePresentation
+          ? null
+          : (nativePresentationParam ?? nativePresentation),
+      selectable: selectableParam ?? selectable,
+      selectedZIndex: clearSelectedZIndex
+          ? null
+          : (selectedZIndexParam ?? selectedZIndex),
     );
     copyMark.setIdForCopy(id);
     return copyMark;
@@ -231,7 +263,10 @@ class Marker extends BaseOverlay {
         position == typedOther.position &&
         rotation == typedOther.rotation &&
         visible == typedOther.visible &&
-        zIndex == typedOther.zIndex;
+        zIndex == typedOther.zIndex &&
+        nativePresentation == typedOther.nativePresentation &&
+        selectable == typedOther.selectable &&
+        selectedZIndex == typedOther.selectedZIndex;
   }
 
   @override
@@ -239,7 +274,9 @@ class Marker extends BaseOverlay {
     return 'Marker{id: $id, alpha: $alpha, anchor: $anchor, '
         'clickable: $clickable, draggable: $draggable,'
         'icon: $icon, infoWindowEnable: $infoWindowEnable, infoWindow: $infoWindow, position: $position, rotation: $rotation, '
-        'visible: $visible, zIndex: $zIndex, onTap: $onTap}';
+        'visible: $visible, zIndex: $zIndex, onTap: $onTap, '
+        'nativePresentation: $nativePresentation, selectable: $selectable, '
+        'selectedZIndex: $selectedZIndex}';
   }
 
   @override
@@ -255,11 +292,21 @@ class Marker extends BaseOverlay {
         position,
         rotation,
         visible,
-        zIndex
+        zIndex,
+        nativePresentation,
+        selectable,
+        selectedZIndex,
       ]);
 }
 
+/// 按 id 建立索引；同一集合内 id 重复时抛出 [ArgumentError]（debug 与 release 均检查）。
 Map<String, Marker> keyByMarkerId(Iterable<Marker> markers) {
-  return Map<String, Marker>.fromEntries(markers.map(
-      (Marker marker) => MapEntry<String, Marker>(marker.id, marker.clone())));
+  final Map<String, Marker> result = <String, Marker>{};
+  for (final Marker marker in markers) {
+    if (result.containsKey(marker.id)) {
+      throw ArgumentError('Duplicate marker id: ${marker.id}');
+    }
+    result[marker.id] = marker.clone();
+  }
+  return result;
 }
