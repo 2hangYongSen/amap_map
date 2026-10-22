@@ -8,6 +8,7 @@ build/
 .idea/
 *.iml
 **/pubspec.lock
+!example/pubspec.lock
 .settings/
 .project
 **.cxx

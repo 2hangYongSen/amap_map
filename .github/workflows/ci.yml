@@ -1,0 +1,51 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+env:
+  FLUTTER_VERSION: 3.41.4
+
+jobs:
+  # 第一组：按 example/pubspec.lock 锁定的版本跑
+  locked:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+      - name: 插件依赖
+        run: flutter pub get
+      - name: example 依赖（使用锁文件）
+        working-directory: example
+        run: flutter pub get --enforce-lockfile
+      - name: example 分析（记录基线，info 不阻断）
+        working-directory: example
+        run: flutter analyze --no-fatal-infos --no-fatal-warnings
+      - name: example 测试
+        working-directory: example
+        run: flutter test
+
+  # 第二组：按依赖允许的最低版本跑
+  downgraded:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+      - name: 插件依赖（最低版本）
+        run: flutter pub downgrade
+      - name: example 依赖（最低版本）
+        working-directory: example
+        run: flutter pub downgrade
+      - name: example 测试
+        working-directory: example
+        run: flutter test
