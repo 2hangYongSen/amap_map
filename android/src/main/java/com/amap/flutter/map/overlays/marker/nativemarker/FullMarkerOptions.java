@@ -30,13 +30,17 @@ public final class FullMarkerOptions {
     public final float zIndex;
     /** icon 模式的原始图标描述，native 模式为 null */
     public final Object icon;
-    /** native 模式的原始 presentation，icon 模式为 null；S7 起再规范化 */
+    /** native 模式的原始 presentation，icon 模式为 null；只供调试，渲染一律读 spec */
     public final Map<?, ?> nativePresentation;
+    /** native 模式的规范化规格（R-NORM-1），icon 模式为 null */
+    public final NativeMarkerSpec spec;
     public final boolean selectable;
     public final Float selectedZIndex;
 
-    private FullMarkerOptions(Map<?, ?> m, String id, String mode, List<?> pos) {
+    private FullMarkerOptions(Map<?, ?> m, String id, String mode, List<?> pos,
+                              NativeMarkerSpec spec) {
         this.id = id;
+        this.spec = spec;
         this.renderMode = mode;
         this.latitude = ((Number) pos.get(0)).doubleValue();
         this.longitude = ((Number) pos.get(1)).doubleValue();
@@ -98,8 +102,11 @@ public final class FullMarkerOptions {
         if (!(pos instanceof List) || ((List<?>) pos).size() < 2) {
             throw new InvalidMarkerException("position 非法");
         }
+        // native 点位先生成 NormSpec，非法配置在这里同步拒绝（R-NAT-REJ-1）
+        NativeMarkerSpec spec = isNative
+                ? NativeMarkerSpec.parse((Map<?, ?>) m.get("nativePresentation")) : null;
         try {
-            return new FullMarkerOptions(m, id, (String) mode, (List<?>) pos);
+            return new FullMarkerOptions(m, id, (String) mode, (List<?>) pos, spec);
         } catch (ClassCastException | IndexOutOfBoundsException e) {
             throw new InvalidMarkerException("字段类型错误: " + e.getMessage());
         }

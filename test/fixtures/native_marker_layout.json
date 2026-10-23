@@ -40,5 +40,55 @@
       {"name": "maxWidth 59.995 与 60.004", "kind": "length", "inputs": [59.995, 60.004]},
       {"name": "锚点微小误差同组", "kind": "ratio", "inputs": [0.5, 0.5000001, 0.4999999]}
     ]
+  },
+  "measurer": {
+    "description": "测试用确定性测量器（三端替身一致）：宽 = UTF-16 长度 × fontSize × widthFactor；行高 = fontSize × lineHeightFactor",
+    "widthFactor": 0.5,
+    "lineHeightFactor": 1.25
+  },
+  "ellipsis": {
+    "description": "T-ELL-1：fontSize 10 即每个 UTF-16 单元宽 5；等于 avail 不省略；不拆字形簇；放不下任何前缀加“…”时不显示文字。平台测量允许差 1 个字符，但结果宽度必须 ≤ avail",
+    "fontSize": 10,
+    "cases": [
+      {"name": "恰好等于 avail 不省略", "text": "abcd", "avail": 20, "expected": "abcd"},
+      {"name": "avail + 0.5 不省略", "text": "abcd", "avail": 20.5, "expected": "abcd"},
+      {"name": "avail − 0.5 省略", "text": "abcd", "avail": 19.5, "expected": "ab…"},
+      {"name": "avail 为 0 不显示文字", "text": "abcd", "avail": 0, "expected": ""},
+      {"name": "avail 为负不显示文字", "text": "abcd", "avail": -3, "expected": ""},
+      {"name": "连“…”都放不下", "text": "abcd", "avail": 3, "expected": ""},
+      {"name": "emoji 代理对不拆开", "text": "ab😀cd", "avail": 20, "expected": "ab…"},
+      {"name": "emoji 整体保留", "text": "ab😀cd", "avail": 25, "expected": "ab😀…"},
+      {"name": "组合字符不拆开", "text": "ae\u0301bc", "avail": 15, "expected": "a…"},
+      {"name": "组合字符整体保留", "text": "ae\u0301bc", "avail": 20, "expected": "ae\u0301…"}
+    ]
+  },
+  "geometry": {
+    "description": "T-GEO-1：两态按锚点对齐后求并集 U（逻辑像素，地理锚点为原点）与画布像素化；按 measurer 手算，误差 ≤ 0.5 像素",
+    "tolerancePx": 0.5,
+    "cases": [
+      {"name": "圆角矩形 bodyCenter d1", "density": 1.0, "presentation": {"content": {"text": "1234"}, "style": {"background": {"type": "shape", "kind": "roundedRect", "fillColor": 4294967295}, "fontSize": 12, "padding": [8, 4, 8, 4]}, "anchorType": "bodyCenter"}, "union": [-20, -11.5, 20, 11.5], "px": 20, "py": 12, "width": 40, "height": 24, "normalText": "1234"},
+      {"name": "箭头 arrowTip d2", "density": 2.0, "presentation": {"content": {"text": "1234"}, "style": {"background": {"type": "shape", "kind": "roundedRect", "fillColor": 4294967295}, "fontSize": 12, "padding": [8, 4, 8, 4], "arrow": {"width": 10, "height": 6}}, "anchorType": "arrowTip"}, "union": [-20, -29, 20, 0], "px": 40, "py": 58, "width": 80, "height": 58},
+      {"name": "箭头加阴影 d3", "density": 3.0, "presentation": {"content": {"text": "1234"}, "style": {"background": {"type": "shape", "kind": "roundedRect", "fillColor": 4294967295}, "fontSize": 12, "padding": [8, 4, 8, 4], "arrow": {"width": 10, "height": 6}, "shadow": {"color": 520093696, "blurRadius": 4, "offset": [0, 2]}}, "anchorType": "arrowTip"}, "union": [-24, -35, 24, 6], "px": 72, "py": 105, "width": 144, "height": 123},
+      {"name": "两态宽度与阴影不同（规格失败场景）d2.625", "density": 2.625, "presentation": {"content": {"text": "abc"}, "style": {"background": {"type": "shape", "kind": "roundedRect", "fillColor": 4294967295}, "width": 60, "height": 24, "arrow": {"width": 10, "height": 6}}, "selectedStyle": {"background": {"type": "shape", "kind": "roundedRect", "fillColor": 4294901760}, "width": 80, "height": 24, "arrow": {"width": 10, "height": 6}, "shadow": {"color": 520093696, "blurRadius": 4}}, "anchorType": "arrowTip"}, "union": [-44, -34, 44, 4], "px": 116, "py": 90, "width": 232, "height": 101},
+      {"name": "选中态无箭头取主体底边中点 d3.5", "density": 3.5, "presentation": {"content": {"text": "1234"}, "style": {"background": {"type": "shape", "kind": "roundedRect", "fillColor": 4294967295}, "fontSize": 12, "padding": [8, 4, 8, 4], "arrow": {"width": 10, "height": 6}}, "selectedStyle": {"background": {"type": "shape", "kind": "roundedRect", "fillColor": 4294967295}, "fontSize": 12, "padding": [8, 4, 8, 4], "width": 50}, "anchorType": "arrowTip"}, "union": [-25, -29, 25, 0], "px": 88, "py": 102, "width": 176, "height": 102},
+      {"name": "custom 锚点两态主体不同 d1", "density": 1.0, "presentation": {"content": {"text": "a"}, "style": {"background": {"type": "shape", "kind": "roundedRect", "fillColor": 4294967295}, "width": 40, "height": 20}, "selectedStyle": {"background": {"type": "shape", "kind": "roundedRect", "fillColor": 4294967295}, "width": 80, "height": 40}, "anchorType": "custom", "anchor": [0.25, 0.75]}, "union": [-20, -30, 60, 10], "px": 20, "py": 30, "width": 80, "height": 40},
+      {"name": "圆形加偏移阴影 d2", "density": 2.0, "presentation": {"content": {"text": "8"}, "style": {"background": {"type": "shape", "kind": "circle", "diameter": 24, "fillColor": 4294967295}, "shadow": {"color": 520093696, "blurRadius": 2, "offset": [1, -3]}}, "anchorType": "bodyCenter"}, "union": [-15, -17, 15, 17], "px": 30, "py": 34, "width": 60, "height": 68},
+      {"name": "minWidth 撑宽 d2.625", "density": 2.625, "presentation": {"content": {"text": "1"}, "style": {"background": {"type": "shape", "kind": "roundedRect", "fillColor": 4294967295}, "fontSize": 12, "padding": [4, 2, 4, 2], "minWidth": 30}, "anchorType": "bodyCenter"}, "union": [-15, -9.5, 15, 9.5], "px": 40, "py": 25, "width": 80, "height": 50, "normalText": "1"},
+      {"name": "maxWidth 截断并省略 d3", "density": 3.0, "presentation": {"content": {"text": "abcdefghij"}, "style": {"background": {"type": "shape", "kind": "roundedRect", "fillColor": 4294967295}, "fontSize": 12, "padding": [5, 3, 5, 3], "maxWidth": 50}, "anchorType": "bodyCenter"}, "union": [-25, -10.5, 25, 10.5], "px": 75, "py": 32, "width": 150, "height": 64, "normalText": "abcde…"},
+      {"name": "非整数输入先规范化 d2.625", "density": 2.625, "presentation": {"content": {"text": "x"}, "style": {"background": {"type": "shape", "kind": "roundedRect", "fillColor": 4294967295}, "width": 59.995, "height": 20.004, "shadow": {"color": 520093696, "blurRadius": 0.3}}, "anchorType": "bodyCenter"}, "union": [-30.296875, -10.296875, 30.296875, 10.296875], "px": 80, "py": 28, "width": 160, "height": 56}
+    ]
+  },
+  "pixelization": {
+    "description": "T-GEO-3：px = ceil(-U.left×d)，py = ceil(-U.top×d)，W = px + ceil(U.right×d)，H = py + ceil(U.bottom×d)，W/H ≥ 1；ceil 前减 1e-9 容差",
+    "cases": [
+      {"name": "d1 整除", "density": 1.0, "union": [-10, -20, 10, 0], "px": 10, "py": 20, "width": 20, "height": 20},
+      {"name": "d2 恰为半像素", "density": 2.0, "union": [-0.25, -0.25, 0.25, 0.25], "px": 1, "py": 1, "width": 2, "height": 2},
+      {"name": "d2.625 0.5/d 附近", "density": 2.625, "union": [-0.1875, -0.203125, 0.203125, 0.1875], "px": 1, "py": 1, "width": 2, "height": 2},
+      {"name": "d2.625 整除", "density": 2.625, "union": [-8, -16, 8, 0], "px": 21, "py": 42, "width": 42, "height": 42},
+      {"name": "d3 不整除", "density": 3.0, "union": [-11.5, -7.25, 11.5, 0], "px": 35, "py": 22, "width": 70, "height": 22},
+      {"name": "d3 整除", "density": 3.0, "union": [-10, -10, 10, 10], "px": 30, "py": 30, "width": 60, "height": 60},
+      {"name": "d3.5 半像素", "density": 3.5, "union": [-15, -29, 15, 0], "px": 53, "py": 102, "width": 106, "height": 102},
+      {"name": "空范围仍 ≥ 1 像素", "density": 2.0, "union": [0, 0, 0, 0], "px": 0, "py": 0, "width": 1, "height": 1}
+    ]
   }
 }

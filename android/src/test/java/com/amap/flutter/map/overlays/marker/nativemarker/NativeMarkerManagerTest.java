@@ -121,6 +121,20 @@ public class NativeMarkerManagerTest {
         assertEquals(2, emitted.get(0).get("eventSeq"));
     }
 
+    // S7：NormSpec 校验失败（规范化后字号为 0）按 R-NAT-REJ-1 同步拒绝，同批其他点不受影响
+    @Test
+    @SuppressWarnings("unchecked")
+    public void invalidNormSpecRejectedPerMarker() {
+        manager.attach();
+        Map<String, Object> bad = Payloads.nativeMarker("bad", "t");
+        Map<String, Object> p = (Map<String, Object>) bad.get("nativePresentation");
+        ((Map<String, Object>) p.get("style")).put("fontSize", 0.001);
+        Map<String, Object> r = manager.update(Payloads.add(1, Payloads.nativeMarker("ok", "t"), bad));
+        assertEquals(Collections.singletonList("bad"), r.get("rejectedMarkerIds"));
+        assertNull(manager.points().get("bad"));
+        assertTrue(manager.points().get("ok").desired.spec != null);
+    }
+
     // R-INIT-3：attach 幂等，不重复创建点位；syncId 为最近接受的请求
     @Test
     public void attachIsIdempotent() {
