@@ -89,7 +89,9 @@ void main() {
   test('resync 连续失败时有界停止并报告错误', () async {
     final List<MarkerSyncException> errors = <MarkerSyncException>[];
     final MarkerSyncQueue q = MarkerSyncQueue(
-        markers: <Marker>{nativeMarker('a', '0')}, onSyncError: errors.add);
+        markers: <Marker>{nativeMarker('a', '0')},
+        onSyncError: errors.add,
+        retryDelay: Duration.zero);
     final FakeMarkerTransport t = FakeMarkerTransport();
     q.attachTransport(t);
     await flush();

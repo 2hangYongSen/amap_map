@@ -1,6 +1,8 @@
 import 'package:amap_map/amap_map.dart';
 import 'package:x_amap_base/x_amap_base.dart';
 
+import '../native_marker/protocol_message.dart';
+
 ///地图事件处理
 class MapEvent<T> {
   /// 地图id
@@ -68,9 +70,10 @@ class PolylineTapEvent extends MapEvent<String> {
   PolylineTapEvent(super.mapId, super.polylineId);
 }
 
-/// 原生点位错误事件
-class NativeMarkerErrorEvent extends MapEvent<NativeMarkerError> {
-  NativeMarkerErrorEvent(super.mapId, super.error);
+/// 新协议原生事件（imagesResult、selectionChanged、removed、nativeError），
+/// 由发送队列统一按 eventSeq 去重后交付
+class MarkerProtocolEvent extends MapEvent<MarkerProtocolMessage> {
+  MarkerProtocolEvent(super.mapId, super.message);
 }
 
 /// Poi点击事件

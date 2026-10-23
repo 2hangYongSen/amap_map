@@ -21,7 +21,7 @@ import 'package:flutter/gestures.dart';
 import 'package:flutter/services.dart';
 import 'package:stream_transform/stream_transform.dart';
 
-import '../native_marker/protocol.dart';
+import '../native_marker/protocol_message.dart';
 import 'map_event.dart';
 
 // ignore: constant_identifier_names
@@ -83,6 +83,13 @@ class MethodChannelAMapFlutterMap implements AMapFlutterPlatform {
       {required int mapId}) {
     return channel(mapId)
         .invokeMapMethod<Object?, Object?>('markers#update', payload);
+  }
+
+  /// 设置原生选中点 `markers#setSelected`，返回 `{revision}`
+  Future<Map<Object?, Object?>?> setSelectedMarker(String? markerId,
+      {required int mapId}) {
+    return channel(mapId).invokeMapMethod<Object?, Object?>(
+        'markers#setSelected', <String, dynamic>{'markerId': markerId});
   }
 
   /// 全量恢复 `markers#resync`（R-SYNC-7）
@@ -200,9 +207,9 @@ class MethodChannelAMapFlutterMap implements AMapFlutterPlatform {
     return _events(mapId).whereType<PolylineTapEvent>();
   }
 
-  /// 原生点位错误事件 `marker#nativeError`
-  Stream<NativeMarkerErrorEvent> onNativeMarkerError({required int mapId}) {
-    return _events(mapId).whereType<NativeMarkerErrorEvent>();
+  /// 新协议点位事件（§6.1）
+  Stream<MarkerProtocolEvent> onMarkerProtocolEvent({required int mapId}) {
+    return _events(mapId).whereType<MarkerProtocolEvent>();
   }
 
   Future<dynamic> _handleMethodCall(MethodCall call, int mapId) async {
@@ -253,13 +260,13 @@ class MethodChannelAMapFlutterMap implements AMapFlutterPlatform {
             LatLng.fromJson(call.arguments['position'])!,
             call.arguments['markerId']));
         break;
+      // 新协议事件原样转交队列，解析与去重在队列中完成
       case 'marker#nativeError':
-        // 未知错误码直接忽略，不影响其他事件
-        final NativeMarkerError? error =
-            nativeMarkerErrorFromMap(call.arguments);
-        if (error != null) {
-          _mapEventStreamController.add(NativeMarkerErrorEvent(mapId, error));
-        }
+      case 'marker#imagesResult':
+      case 'marker#selectionChanged':
+      case 'markers#removed':
+        _mapEventStreamController.add(MarkerProtocolEvent(mapId,
+            MarkerProtocolMessage.fromArguments(call.method, call.arguments)));
         break;
       case 'polyline#onTap':
         _mapEventStreamController

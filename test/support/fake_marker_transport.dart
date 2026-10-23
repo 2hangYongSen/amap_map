@@ -75,7 +75,31 @@ class FakeMarkerTransport implements MarkerSyncTransport {
   @override
   Future<Map<Object?, Object?>?> resync(Map<String, dynamic> payload) =>
       _dispatch(SentCall('markers#resync', payload));
+
+  @override
+  Future<void> updateOptions(Map<String, dynamic> options) =>
+      _dispatch(SentCall('map#update', options));
+
+  /// 选择命令默认返回递增的 revision
+  int revision = 0;
+
+  @override
+  Future<Map<Object?, Object?>?> setSelected(String? markerId) {
+    final SentCall call =
+        SentCall('markers#setSelected', <String, dynamic>{'markerId': markerId});
+    if (_scripted.isNotEmpty) {
+      calls.add(call);
+      return _scripted.removeAt(0)(call);
+    }
+    calls.add(call);
+    return Future<Map<Object?, Object?>?>.value(
+        <Object?, Object?>{'revision': ++revision});
+  }
 }
+
+/// 构造一条新协议原生事件
+MarkerProtocolMessage msg(String method, int seq, Map<String, Object?> args) =>
+    MarkerProtocolMessage(method, <Object?, Object?>{...args, 'eventSeq': seq});
 
 /// 让微任务与已完成的 Future 回调全部执行
 Future<void> flush() async {
