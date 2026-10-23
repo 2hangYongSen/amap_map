@@ -75,4 +75,53 @@ final class FakeMarkerHost implements MarkerHost {
     public Object defaultIcon() {
         return DEFAULT_ICON;
     }
+
+    /** 为 true 时下一次 native 应用抛异常（applyFailed 路径） */
+    boolean failNextNative = false;
+
+    @Override
+    public void addNativeMarker(FullMarkerOptions options, NativeIcon icon) {
+        failIfAsked();
+        calls.add("add:" + options.id);
+        Shown s = new Shown();
+        s.options = options;
+        s.icon = icon.descriptor;
+        markers.put(options.id, s);
+    }
+
+    @Override
+    public void updateNativeMarker(FullMarkerOptions options, NativeIcon icon) {
+        failIfAsked();
+        // icon 为空即只改属性，相当于 setPosition 等（T-GEN-2/4 计数用）
+        calls.add((icon == null ? "props:" : "setIcon:") + options.id);
+        Shown s = markers.get(options.id);
+        s.options = options;
+        if (icon != null) {
+            s.icon = icon.descriptor;
+        }
+    }
+
+    /** 每次 native SDK 调用后执行（帧预算测试用来推进假时钟） */
+    Runnable onNativeCall;
+
+    private void failIfAsked() {
+        if (onNativeCall != null) {
+            onNativeCall.run();
+        }
+        if (failNextNative) {
+            failNextNative = false;
+            throw new IllegalStateException("SDK 调用失败");
+        }
+    }
+
+    /** 某类调用的次数，如 count("props:") */
+    int count(String prefix) {
+        int n = 0;
+        for (String c : calls) {
+            if (c.startsWith(prefix)) {
+                n++;
+            }
+        }
+        return n;
+    }
 }

@@ -16,6 +16,7 @@ import com.amap.flutter.map.overlays.AbstractOverlayController;
 import com.amap.flutter.map.overlays.marker.nativemarker.FullMarkerOptions;
 import com.amap.flutter.map.overlays.marker.nativemarker.MarkerEventSink;
 import com.amap.flutter.map.overlays.marker.nativemarker.MarkerHost;
+import com.amap.flutter.map.overlays.marker.nativemarker.NativeIcon;
 import com.amap.flutter.map.overlays.marker.nativemarker.NativeMarkerManager;
 import com.amap.flutter.map.utils.Const;
 import com.amap.flutter.map.utils.ConvertUtil;
@@ -338,6 +339,22 @@ public class MarkersController
         @Override
         public Object defaultIcon() {
             return BitmapDescriptorFactory.defaultMarker();
+        }
+
+        @Override
+        public void addNativeMarker(FullMarkerOptions o, NativeIcon icon) {
+            addMarker(o, icon.descriptor);
+            // native 点位锚点来自合成画布（§9.2），覆盖 options.anchor
+            controllerMapByDartId.get(o.id).setAnchor(icon.anchorU, icon.anchorV);
+        }
+
+        @Override
+        public void updateNativeMarker(FullMarkerOptions o, NativeIcon icon) {
+            MarkerController controller = controllerMapByDartId.get(o.id);
+            if (null != controller) {
+                controller.applyNative(o, icon == null ? null : (BitmapDescriptor) icon.descriptor,
+                        icon == null ? -1 : icon.anchorU, icon == null ? -1 : icon.anchorV);
+            }
         }
     }
 }
