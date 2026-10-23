@@ -42,7 +42,15 @@ public class Const {
      * markers
      */
     public static final String METHOD_MARKER_UPDATE = "markers#update";
-    public static final String[] METHOD_ID_LIST_FOR_MARKER = {METHOD_MARKER_UPDATE};
+    /** 新协议握手（§6.8） */
+    public static final String METHOD_MARKER_ATTACH = "markers#attach";
+    /** 新协议全量恢复（R-RES-9） */
+    public static final String METHOD_MARKER_RESYNC = "markers#resync";
+    public static final String[] METHOD_ID_LIST_FOR_MARKER = {
+            METHOD_MARKER_UPDATE,
+            METHOD_MARKER_ATTACH,
+            METHOD_MARKER_RESYNC
+    };
 
     /**
      * polygons

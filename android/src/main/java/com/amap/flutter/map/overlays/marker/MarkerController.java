@@ -3,6 +3,7 @@ package com.amap.flutter.map.overlays.marker;
 import com.amap.api.maps.model.BitmapDescriptor;
 import com.amap.api.maps.model.LatLng;
 import com.amap.api.maps.model.Marker;
+import com.amap.flutter.map.overlays.marker.nativemarker.FullMarkerOptions;
 
 /**
  * @author whm
@@ -99,6 +100,27 @@ class MarkerController implements MarkerOptionsSink {
     @Override
     public void setClickable(boolean clickable) {
         marker.setClickable(clickable);
+    }
+
+    /**
+     * 新协议完整替换（R-PROTO-2/3）：每个字段都应用，null 已在解析时换成默认值。
+     * icon 为 null 表示保留当前图标（icon→native 绘制完成前，R-PROTO-4）。
+     */
+    void applyFull(FullMarkerOptions o, BitmapDescriptor icon) {
+        marker.setPosition(new LatLng(o.latitude, o.longitude));
+        marker.setAlpha(o.alpha);
+        marker.setAnchor(o.anchorU, o.anchorV);
+        marker.setClickable(o.clickable);
+        marker.setDraggable(o.draggable);
+        marker.setInfoWindowEnable(o.infoWindowEnable);
+        marker.setTitle(o.title);
+        marker.setSnippet(o.snippet);
+        marker.setRotateAngle(o.rotation);
+        marker.setVisible(o.visible);
+        marker.setZIndex(o.zIndex);
+        if (icon != null) {
+            marker.setIcon(icon);
+        }
     }
 
     public void showInfoWindow() {

@@ -5,12 +5,18 @@ import android.text.TextUtils;
 import androidx.annotation.NonNull;
 
 import com.amap.api.maps.AMap;
+import com.amap.api.maps.model.BitmapDescriptor;
+import com.amap.api.maps.model.BitmapDescriptorFactory;
 import com.amap.api.maps.model.LatLng;
 import com.amap.api.maps.model.Marker;
 import com.amap.api.maps.model.MarkerOptions;
 import com.amap.api.maps.model.Poi;
 import com.amap.flutter.map.MyMethodCallHandler;
 import com.amap.flutter.map.overlays.AbstractOverlayController;
+import com.amap.flutter.map.overlays.marker.nativemarker.FullMarkerOptions;
+import com.amap.flutter.map.overlays.marker.nativemarker.MarkerEventSink;
+import com.amap.flutter.map.overlays.marker.nativemarker.MarkerHost;
+import com.amap.flutter.map.overlays.marker.nativemarker.NativeMarkerManager;
 import com.amap.flutter.map.utils.Const;
 import com.amap.flutter.map.utils.ConvertUtil;
 import com.amap.flutter.map.utils.LogUtil;
@@ -37,6 +43,9 @@ public class MarkersController
         AMap.OnPOIClickListener {
     private static final String CLASS_NAME = "MarkersController";
     private String selectedMarkerDartId;
+    /** 新协议状态；旧格式请求不经过它（R-PROTO-3） */
+    private final NativeMarkerManager nativeManager;
+    private boolean disposed = false;
 
     public MarkersController(MethodChannel methodChannel, AMap amap) {
         super(methodChannel, amap);
@@ -44,6 +53,39 @@ public class MarkersController
         amap.addOnMarkerDragListener(this);
         amap.addOnMapClickListener(this);
         amap.addOnPOIClickListener(this);
+        nativeManager = new NativeMarkerManager(new SdkMarkerHost(), new MarkerEventSink() {
+            @Override
+            public void emit(String method, Map<String, Object> args) {
+                if (!disposed) {
+                    MarkersController.this.methodChannel.invokeMethod(method, args);
+                }
+            }
+        });
+    }
+
+    /** 创建参数为新协议时登记初始点位（R-SYNC-4），由 AMapOptionsBuilder 调用 */
+    public void applyCreationParams(Map<?, ?> params) {
+        nativeManager.applyCreation(params);
+    }
+
+    /**
+     * 第一阶段销毁（§8.6）：移除监听与全部 Marker。
+     * 必须在 mapView.onDestroy() 之前调用（R-DISP-2）；幂等。
+     */
+    public void dispose() {
+        if (disposed) {
+            return;
+        }
+        disposed = true;
+        if (null != amap) {
+            amap.removeOnMarkerClickListener(this);
+            amap.removeOnMarkerDragListener(this);
+            amap.removeOnMapClickListener(this);
+            amap.removeOnPOIClickListener(this);
+        }
+        nativeManager.dispose();
+        controllerMapByDartId.clear();
+        idMapByOverlyId.clear();
     }
 
     @Override
@@ -57,7 +99,30 @@ public class MarkersController
         LogUtil.i(CLASS_NAME, "doMethodCall===>" + call.method);
         switch (call.method) {
             case Const.METHOD_MARKER_UPDATE:
-                invokeMarkerOptions(call, result);
+                // 按 protocolVersion 分流：不带即旧格式，行为与 1.0.15 相同
+                if (NativeMarkerManager.isV2Payload(call.arguments)) {
+                    Map<String, Object> r = nativeManager.update(call.arguments);
+                    LogUtil.i(CLASS_NAME, "markers#update v2 result==>" + r);
+                    result.success(r);
+                } else if (disposed) {
+                    result.success(null); // 已销毁：不再触碰地图
+                } else {
+                    invokeMarkerOptions(call, result);
+                }
+                break;
+            case Const.METHOD_MARKER_ATTACH:
+                if (disposed) {
+                    result.error("disposed", "map disposed", null);
+                } else {
+                    Map<String, Object> r = nativeManager.attach();
+                    LogUtil.i(CLASS_NAME, "markers#attach result==>" + r);
+                    result.success(r);
+                }
+                break;
+            case Const.METHOD_MARKER_RESYNC:
+                Map<String, Object> r = nativeManager.resync(call.arguments);
+                LogUtil.i(CLASS_NAME, "markers#resync result==>" + r);
+                result.success(r);
                 break;
         }
     }
@@ -222,4 +287,57 @@ public class MarkersController
         hideMarkerInfoWindow(selectedMarkerDartId, null != poi ? poi.getCoordinate() : null);
     }
 
+    /** NativeMarkerManager 的 SDK 出口，共用旧路径的两张 id 映射表 */
+    private final class SdkMarkerHost implements MarkerHost {
+        @Override
+        public boolean hasMarker(String id) {
+            return controllerMapByDartId.containsKey(id);
+        }
+
+        @Override
+        public void addMarker(FullMarkerOptions o, Object icon) {
+            if (null == amap) {
+                return;
+            }
+            Marker marker = amap.addMarker(new MarkerOptions()
+                    .position(new LatLng(o.latitude, o.longitude))
+                    .icon((BitmapDescriptor) icon));
+            MarkerController controller = new MarkerController(marker);
+            controller.applyFull(o, null); // 其余字段走同一完整替换路径
+            controllerMapByDartId.put(o.id, controller);
+            idMapByOverlyId.put(marker.getId(), o.id);
+        }
+
+        @Override
+        public void updateMarker(FullMarkerOptions o, Object icon) {
+            MarkerController controller = controllerMapByDartId.get(o.id);
+            if (null != controller) {
+                controller.applyFull(o, (BitmapDescriptor) icon);
+            }
+        }
+
+        @Override
+        public void removeMarker(String id) {
+            MarkerController controller = controllerMapByDartId.remove(id);
+            if (null != controller) {
+                idMapByOverlyId.remove(controller.getMarkerId());
+                controller.remove();
+            }
+        }
+
+        @Override
+        public Iterable<String> markerIds() {
+            return controllerMapByDartId.keySet();
+        }
+
+        @Override
+        public Object decodeIcon(Object rawIcon) {
+            return ConvertUtil.toBitmapDescriptor(rawIcon);
+        }
+
+        @Override
+        public Object defaultIcon() {
+            return BitmapDescriptorFactory.defaultMarker();
+        }
+    }
 }
