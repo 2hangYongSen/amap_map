@@ -21,6 +21,7 @@ import 'package:flutter/gestures.dart';
 import 'package:flutter/services.dart';
 import 'package:stream_transform/stream_transform.dart';
 
+import '../native_marker/protocol.dart';
 import 'map_event.dart';
 
 // ignore: constant_identifier_names
@@ -68,6 +69,27 @@ class MethodChannelAMapFlutterMap implements AMapFlutterPlatform {
       'markers#update',
       markerUpdates.toMap(),
     );
+  }
+
+  /// 新协议握手 `markers#attach`（R-INIT-3）
+  Future<Map<Object?, Object?>?> attachMarkers({required int mapId}) {
+    return channel(mapId).invokeMapMethod<Object?, Object?>(
+        'markers#attach', <String, dynamic>{'protocolVersion': 2});
+  }
+
+  /// 新协议 `markers#update`，载荷由发送队列生成（§6.2）
+  Future<Map<Object?, Object?>?> updateMarkersV2(
+      Map<String, dynamic> payload,
+      {required int mapId}) {
+    return channel(mapId)
+        .invokeMapMethod<Object?, Object?>('markers#update', payload);
+  }
+
+  /// 全量恢复 `markers#resync`（R-SYNC-7）
+  Future<Map<Object?, Object?>?> resyncMarkers(Map<String, dynamic> payload,
+      {required int mapId}) {
+    return channel(mapId)
+        .invokeMapMethod<Object?, Object?>('markers#resync', payload);
   }
 
   /// 更新polyline的数据
@@ -178,6 +200,11 @@ class MethodChannelAMapFlutterMap implements AMapFlutterPlatform {
     return _events(mapId).whereType<PolylineTapEvent>();
   }
 
+  /// 原生点位错误事件 `marker#nativeError`
+  Stream<NativeMarkerErrorEvent> onNativeMarkerError({required int mapId}) {
+    return _events(mapId).whereType<NativeMarkerErrorEvent>();
+  }
+
   Future<dynamic> _handleMethodCall(MethodCall call, int mapId) async {
     switch (call.method) {
       case 'location#changed':
@@ -225,6 +252,14 @@ class MethodChannelAMapFlutterMap implements AMapFlutterPlatform {
             mapId,
             LatLng.fromJson(call.arguments['position'])!,
             call.arguments['markerId']));
+        break;
+      case 'marker#nativeError':
+        // 未知错误码直接忽略，不影响其他事件
+        final NativeMarkerError? error =
+            nativeMarkerErrorFromMap(call.arguments);
+        if (error != null) {
+          _mapEventStreamController.add(NativeMarkerErrorEvent(mapId, error));
+        }
         break;
       case 'polyline#onTap':
         _mapEventStreamController

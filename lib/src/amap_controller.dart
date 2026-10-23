@@ -84,7 +84,17 @@ class AMapController {
     _methodChannel.onPolylineTap(mapId: mapId).listen((PolylineTapEvent e) {
       _mapState.onPolylineTap(e.value);
     });
+
+    // 异步校验失败等原生错误只上报，不回退、不重发（R-SYNC-8）
+    _methodChannel
+        .onNativeMarkerError(mapId: mapId)
+        .listen((NativeMarkerErrorEvent e) {
+      _mapState.widget.onNativeMarkerError?.call(e.value);
+    });
   }
+
+  /// 发送队列使用的通道出口
+  MarkerSyncTransport get _markerTransport => _ControllerMarkerTransport(this);
 
   void disponse() {
     _methodChannel.dispose(id: mapId);
@@ -148,4 +158,26 @@ class AMapController {
   Future<String> getSatelliteImageApprovalNumber() {
     return _methodChannel.getSatelliteImageApprovalNumber(mapId: mapId);
   }
+}
+
+/// 把发送队列的请求转发到当前地图的 MethodChannel
+class _ControllerMarkerTransport implements MarkerSyncTransport {
+  _ControllerMarkerTransport(this._c);
+
+  final AMapController _c;
+
+  @override
+  Future<void> updateLegacy(MarkerUpdates updates) => _c._updateMarkers(updates);
+
+  @override
+  Future<Map<Object?, Object?>?> attach() =>
+      _methodChannel.attachMarkers(mapId: _c.mapId);
+
+  @override
+  Future<Map<Object?, Object?>?> update(Map<String, dynamic> payload) =>
+      _methodChannel.updateMarkersV2(payload, mapId: _c.mapId);
+
+  @override
+  Future<Map<Object?, Object?>?> resync(Map<String, dynamic> payload) =>
+      _methodChannel.resyncMarkers(payload, mapId: _c.mapId);
 }

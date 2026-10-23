@@ -112,6 +112,12 @@ class AMapWidget extends StatefulWidget {
   /// Marker InfoWindow 适配器
   final InfoWindowAdapter? infoWindowAdapter;
 
+  /// 原生点位使用的图片资源；非空时地图启用新协议且不再回退
+  final Set<MarkerImageResource> markerImages;
+
+  /// 原生点位错误回调（解码失败、异步校验失败等）
+  final ValueChanged<NativeMarkerError>? onNativeMarkerError;
+
   /// 创建一个展示高德地图的widget
   ///
   /// 在app首次启动时必须传入高德合规声明配置[privacyStatement],后续如果没有变化不需要重复设置
@@ -157,7 +163,9 @@ class AMapWidget extends StatefulWidget {
       this.infoWindowAdapter,
       this.logoPosition,
       this.logoBottomMargin,
-      this.logoLeftMargin});
+      this.logoLeftMargin,
+      this.markerImages = const <MarkerImageResource>{},
+      this.onNativeMarkerError});
 
   ///
   @override
@@ -172,20 +180,26 @@ class _MapState extends State<AMapWidget> {
 
   final Completer<AMapController> _controller = Completer<AMapController>();
   late _AMapOptions _mapOptions;
+  late final MarkerSyncQueue _markerQueue;
+
+  // 创建参数只在首次 build 计算，平台视图只在首次创建时使用（R-SYNC-4）
+  Map<String, dynamic>? _creationParams;
+
+  Map<String, dynamic> _buildCreationParams() => <String, dynamic>{
+        'privacyStatement': AMapInitializer._privacyStatement?.toMap(),
+        'apiKey': AMapInitializer._apiKey?.toMap(),
+        'initialCameraPosition': widget.initialCameraPosition.toMap(),
+        'options': _mapOptions.toMap(),
+        // 旧协议只含 markersToAdd；新协议另含 protocolVersion、imagesToAdd
+        ..._markerQueue.creationParams,
+        'polylinesToAdd': serializeOverlaySet(widget.polylines),
+        'polygonsToAdd': serializeOverlaySet(widget.polygons),
+      };
 
   @override
   Widget build(BuildContext context) {
-    final Map<String, dynamic> creationParams = <String, dynamic>{
-      'privacyStatement': AMapInitializer._privacyStatement?.toMap(),
-      'apiKey': AMapInitializer._apiKey?.toMap(),
-      'initialCameraPosition': widget.initialCameraPosition.toMap(),
-      'options': _mapOptions.toMap(),
-      'markersToAdd': serializeOverlaySet(widget.markers),
-      'polylinesToAdd': serializeOverlaySet(widget.polylines),
-      'polygonsToAdd': serializeOverlaySet(widget.polygons),
-    };
     Widget mapView = _methodChannel.buildView(
-      creationParams,
+      _creationParams ??= _buildCreationParams(),
       widget.gestureRecognizers,
       onPlatformViewCreated,
     );
@@ -199,7 +213,9 @@ class _MapState extends State<AMapWidget> {
   void initState() {
     super.initState();
     _mapOptions = _AMapOptions.fromWidget(widget);
-    _markers = keyByMarkerId(widget.markers);
+    _markerQueue = _createMarkerQueue();
+    // 与队列目标一致：初始校验失败时为空
+    _markers = keyByMarkerId(_markerQueue.targetMarkers);
     _polygons = keyByPolygonId(widget.polygons);
     _polylines = keyByPolylineId(widget.polylines);
 
@@ -208,6 +224,8 @@ class _MapState extends State<AMapWidget> {
 
   @override
   void dispose() async {
+    // 同步停止发送队列，迟到结果不再推进状态
+    _markerQueue.dispose();
     super.dispose();
     AMapController controller = await _controller.future;
     controller.disponse();
@@ -242,6 +260,8 @@ class _MapState extends State<AMapWidget> {
       this,
     );
     _controller.complete(controller);
+    // 订阅已在控制器构造时建立，之后才确认初始快照或握手（R-INIT-1）
+    _markerQueue.attachTransport(controller._markerTransport);
 
     final MapCreatedCallback? onMapCreated = widget.onMapCreated;
     if (onMapCreated != null) {
@@ -291,17 +311,63 @@ class _MapState extends State<AMapWidget> {
     _mapOptions = newOptions;
   }
 
-  void updateMarkers() async {
-    final AMapController controller = await _controller.future;
-    MarkerUpdates markerUpdates =
-        MarkerUpdates.from(_markers.values.toSet(), widget.markers);
+  /// 把最新点位交给发送队列：合并、无变化不发送（R-SYNC-1/2/5）。
+  ///
+  /// 校验失败时上报 [ArgumentError]，本次点位更新整体不发送（R-VAL）；
+  /// 不向上抛出，避免地图子树被替换成错误组件。
+  void updateMarkers() {
+    try {
+      _markerQueue.setTarget(widget.markers, widget.markerImages);
+    } on ArgumentError catch (e, s) {
+      _reportMarkerError(e, s);
+      return;
+    }
+    _syncLocalMarkers();
+  }
 
-    markerUpdates.markerIdsToRemove?.forEach((String markerId) {
-      _removeInfoWindow(markerId);
-    });
+  void _reportMarkerError(ArgumentError error, StackTrace stack) {
+    FlutterError.reportError(FlutterErrorDetails(
+      exception: error,
+      stack: stack,
+      library: 'amap_map',
+      context: ErrorDescription('校验 AMapWidget.markers / markerImages 时'),
+    ));
+  }
 
-    // ignore: unawaited_futures
-    controller._updateMarkers(markerUpdates);
+  /// 初始点位校验失败时上报，并先按空集合创建，后续合法更新照常发送
+  MarkerSyncQueue _createMarkerQueue() {
+    try {
+      return MarkerSyncQueue(
+        markers: widget.markers,
+        images: widget.markerImages,
+        onSyncError: _onMarkerSyncError,
+      );
+    } on ArgumentError catch (e, s) {
+      _reportMarkerError(e, s);
+      return MarkerSyncQueue(
+          markers: const <Marker>{}, onSyncError: _onMarkerSyncError);
+    }
+  }
+
+  void _onMarkerSyncError(MarkerSyncException error) {
+    if (kDebugMode) {
+      debugPrint('AMapWidget marker sync: $error');
+    }
+  }
+
+  /// 本地回调索引与 InfoWindow，沿用原先在控制器就绪后处理的时序
+  void _syncLocalMarkers() async {
+    await _controller.future;
+    if (!mounted) {
+      return;
+    }
+    final Set<String> currentIds =
+        widget.markers.map((Marker m) => m.id).toSet();
+    for (final String markerId in _markers.keys.toList()) {
+      if (!currentIds.contains(markerId)) {
+        _removeInfoWindow(markerId);
+      }
+    }
     _markers = keyByMarkerId(widget.markers);
 
     if (widget.infoWindowAdapter != null) {
