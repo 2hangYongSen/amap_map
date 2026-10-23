@@ -262,6 +262,10 @@ public class AMapPlatformView
     }
 
     private void destroyMapViewIfNecessary() {
+        // 先清理点位再销毁地图（§8.6、R-DISP-2）；dispose 与生命周期 onDestroy 都经过这里
+        if (null != markersController) {
+            markersController.dispose();
+        }
         if (mapView == null) {
             return;
         }

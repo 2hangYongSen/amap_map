@@ -31,6 +31,27 @@ jobs:
         working-directory: example
         run: flutter test
 
+  # Android JVM 单测（S5 起）：经 example 工程运行插件模块的 testDebugUnitTest
+  android-unit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+      - name: example 依赖（使用锁文件）
+        working-directory: example
+        run: flutter pub get --enforce-lockfile
+      - name: JUnit
+        working-directory: example/android
+        run: ./gradlew :amap_map:testDebugUnitTest
+
   # 第二组：按依赖允许的最低版本跑
   downgraded:
     runs-on: ubuntu-latest

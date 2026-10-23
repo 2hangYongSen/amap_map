@@ -36,6 +36,16 @@
 
 后续阶段要求：新增文件 analyze 0 issue，已有 14 个用例持续通过。
 
+## Android JVM 单测（S5 起）
+
+插件目录本身不能独立构建，经 example 工程运行（JDK 17）：
+
+```bash
+cd example/android && ./gradlew :amap_map:testDebugUnitTest
+```
+
+测试位于 `android/src/test/java/`，只依赖 `testImplementation 'junit:junit:4.13.2'`。
+
 ## 对照入口
 
 `example/lib/pages/interactive/marker_benchmark_page.dart` 提供点位数量（0/100/200）和图标类型（默认图标 / PNG 图标）切换，用于旧 `Marker.icon` 路径的对照。
