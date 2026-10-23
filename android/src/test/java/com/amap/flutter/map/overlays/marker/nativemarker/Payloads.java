@@ -24,8 +24,16 @@ final class Payloads {
     static Map<String, Object> nativeMarker(String id, String text) {
         Map<String, Object> content = new HashMap<>();
         content.put("text", text);
+        // 最小合法样式：白色圆角矩形（S7 起原生会校验 NormSpec）
+        Map<String, Object> bg = new HashMap<>();
+        bg.put("type", "shape");
+        bg.put("kind", "roundedRect");
+        bg.put("fillColor", 0xFFFFFFFFL);
+        Map<String, Object> style = new HashMap<>();
+        style.put("background", bg);
         Map<String, Object> p = new HashMap<>();
         p.put("content", content);
+        p.put("style", style);
         Map<String, Object> m = base(id);
         m.put("renderMode", "native");
         m.put("icon", null);
