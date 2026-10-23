@@ -1,0 +1,198 @@
+package com.amap.flutter.map.overlays.marker.nativemarker;
+
+import java.util.ArrayList;
+
+/**
+ * 接收路径的核心（§8.2）：ensure 唯一入口、先接续后撤销（R-GEN-2）、结果逐个校验（R-GEN-3）、
+ * 应用时读最新快照（R-GEN-4）、引用计数时机（R-CACHE-1）。主线程访问。
+ */
+final class RenderPipeline implements RenderScheduler.Callback, FrameApplier.Sink {
+    interface Listener {
+        void renderFailed(String markerId, String message);
+
+        void applyFailed(String markerId, String message);
+
+        /** 任务结束：重新评估预热、检查是否已终止 */
+        void afterChange();
+    }
+
+    private final PointTable points;
+    private final RenderCache cache;
+    private final RenderScheduler scheduler;
+    private final FrameApplier applier;
+    private final MarkerHost host;
+    private final IconFactory icons;
+    private Listener listener;
+    boolean disposed = false;
+
+    RenderPipeline(PointTable points, RenderCache cache, RenderScheduler scheduler,
+                   FrameApplier applier, MarkerHost host, IconFactory icons) {
+        this.points = points;
+        this.cache = cache;
+        this.scheduler = scheduler;
+        this.applier = applier;
+        this.host = host;
+        this.icons = icons;
+        scheduler.setCallback(this);
+        applier.setSink(this);
+    }
+
+    void setListener(Listener l) {
+        this.listener = l;
+    }
+
+    /** R-GEN-2：need 为真时先为当前代次登记新路径，再撤销旧路径（旧 waiter / 旧应用项） */
+    void reconcile(PointTable.Entry e, boolean sel, boolean need, int priority) {
+        int r = PointTable.Entry.role(sel);
+        Waiter oldW = e.waiting[r];
+        ApplyItem oldA = e.applying[r];
+        e.waiting[r] = null;
+        e.applying[r] = null;
+        if (need) {
+            ensure(e, sel, priority);
+        }
+        revoke(oldW, oldA);
+    }
+
+    /** “需要 key K”的唯一入口：缓存命中 → 应用项；已有任务 → 加 waiter；否则新建任务 */
+    private void ensure(PointTable.Entry e, boolean sel, int priority) {
+        String key = sel ? e.selectedKey : e.normalKey;
+        RenderCache.Entry c = cache.get(key);
+        if (c != null) {
+            if (appliesRole(sel)) {
+                enqueueApply(e, sel, c);
+            }
+            return; // 未选中点的预热：命中缓存即完成
+        }
+        RenderTask t = scheduler.find(key);
+        e.waiting[PointTable.Entry.role(sel)] = t != null
+                ? scheduler.addWaiter(t, e.id, e.generation, sel, priority)
+                : scheduler.create(key, e.desired.spec, sel, priority, e.id, e.generation);
+    }
+
+    /** S12 接入选择前只有普通态会被应用；选中态结果只进缓存 */
+    private static boolean appliesRole(boolean sel) {
+        return !sel;
+    }
+
+    private void enqueueApply(PointTable.Entry e, boolean sel, RenderCache.Entry c) {
+        cache.addPending(c);
+        ApplyItem it = new ApplyItem(e, e.generation, sel, c, !host.hasMarker(e.id));
+        e.applying[PointTable.Entry.role(sel)] = it;
+        applier.enqueue(it);
+    }
+
+    void revokeAll(PointTable.Entry e) {
+        for (int r = 0; r < 2; r++) {
+            revoke(e.waiting[r], e.applying[r]);
+            e.waiting[r] = null;
+            e.applying[r] = null;
+        }
+    }
+
+    private void revoke(Waiter w, ApplyItem a) {
+        if (w != null) {
+            scheduler.removeWaiter(w);
+        }
+        if (a != null) {
+            drop(a);
+        }
+    }
+
+    private void drop(ApplyItem a) {
+        if (!a.dropped) {
+            a.dropped = true;
+            cache.dropPending(a.icon);
+        }
+    }
+
+    /** R-GEN-3：写缓存，再逐个校验 waiter；不通过的只丢这条登记，不丢位图 */
+    @Override
+    public void onTaskDone(RenderTask t, MarkerPainter.Result result, Exception error) {
+        if (disposed) {
+            if (result != null) {
+                icons.discard(result.bitmap); // 迟到输出从未交给 SDK（R-DISP-2）
+            }
+            listener.afterChange();
+            return;
+        }
+        RenderCache.Entry c = result == null ? null : cache.put(t.key, result.bitmap,
+                result.anchorU, result.anchorV);
+        for (Waiter w : new ArrayList<>(t.waiters)) {
+            PointTable.Entry e = points.get(w.markerId);
+            int r = PointTable.Entry.role(w.selected);
+            if (e == null || e.waiting[r] != w) {
+                continue; // 已被撤销或替换（理论上撤销时已移出 waiters）
+            }
+            e.waiting[r] = null;
+            if (!e.isValid(w.generation, w.selected, t.key)) {
+                continue;
+            }
+            if (c == null) {
+                // 绘制失败：保持原显示，报错一次；key 变化前不自动重试（§6.6）
+                e.failedKey[r] = t.key;
+                listener.renderFailed(e.id, String.valueOf(error == null ? "绘制结果为空"
+                        : error.getMessage()));
+            } else if (appliesRole(w.selected)) {
+                enqueueApply(e, w.selected, c);
+            }
+        }
+        t.waiters.clear();
+        if (c != null) {
+            cache.enforceBudget();
+        }
+        listener.afterChange();
+    }
+
+    /** 帧回调中应用一项：再校验一次代次与 key，读最新快照（R-GEN-3/4） */
+    @Override
+    public void apply(ApplyItem it) {
+        PointTable.Entry e = it.point;
+        int r = PointTable.Entry.role(it.selected);
+        e.applying[r] = null;
+        cache.dropPending(it.icon);
+        it.dropped = true;
+        if (points.get(e.id) != e || !e.isValid(it.generation, it.selected, it.icon.key)) {
+            return;
+        }
+        RenderCache.Entry old = e.shown;
+        cache.addDisplay(it.icon); // 先登记新显示，失败再撤回
+        try {
+            if (host.hasMarker(e.id)) {
+                host.updateNativeMarker(e.desired, it.icon.icon());
+            } else {
+                host.addNativeMarker(e.desired, it.icon.icon());
+            }
+        } catch (RuntimeException ex) {
+            cache.dropDisplay(it.icon);
+            e.failedKey[r] = it.icon.key;
+            listener.applyFailed(e.id, String.valueOf(ex.getMessage()));
+            return;
+        }
+        e.shown = it.icon;
+        // R-CACHE-1：旧条目在 setIcon(new) 返回之后才减 1
+        if (old != null) {
+            cache.dropDisplay(old);
+        }
+        cache.enforceBudget();
+    }
+
+    /** 点位删除：remove() 返回之后才归还显示引用（R-CACHE-1） */
+    void removeMarker(PointTable.Entry e) {
+        revokeAll(e);
+        host.removeMarker(e.id);
+        if (e.shown != null) {
+            cache.dropDisplay(e.shown);
+            e.shown = null;
+        }
+    }
+
+    /** native→icon：放弃原生显示引用，Marker 本身由调用方改成 icon */
+    void releaseShown(PointTable.Entry e) {
+        revokeAll(e);
+        if (e.shown != null) {
+            cache.dropDisplay(e.shown);
+            e.shown = null;
+        }
+    }
+}

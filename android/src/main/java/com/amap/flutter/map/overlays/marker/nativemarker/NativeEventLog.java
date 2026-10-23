@@ -42,6 +42,20 @@ public final class NativeEventLog {
         return eventSeq;
     }
 
+    /**
+     * 状态类事件（如 marker#imagesResult）：握手前也分配序号，但只记录在注册表里、不发送
+     * （R-INIT-2），状态由 attach 快照交付。
+     */
+    public void event(String method, Map<String, Object> args) {
+        if (closed) {
+            return;
+        }
+        args.put("eventSeq", ++eventSeq);
+        if (open) {
+            sink.emit(method, args);
+        }
+    }
+
     /** 记录 marker#nativeError；握手前只缓冲，握手后同时实时发送 */
     public void error(String code, String markerId, String imageId, String message) {
         if (closed) {

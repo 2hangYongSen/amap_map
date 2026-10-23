@@ -20,6 +20,8 @@ public final class NativeMarkerManager {
     private final MarkerHost host;
     private final PointTable points = new PointTable();
     private final NativeEventLog events;
+    /** 完整渲染模式；为 null 时保持 S5 协议桩（native 点显示占位图标） */
+    private final NativeRenderer renderer;
     private boolean v2 = false;
     private boolean disposed = false;
     private int lastSyncId = 0;
@@ -27,8 +29,18 @@ public final class NativeMarkerManager {
     private final List<String> initialRejected = new ArrayList<>();
 
     public NativeMarkerManager(MarkerHost host, MarkerEventSink sink) {
+        this(host, sink, null);
+    }
+
+    public NativeMarkerManager(MarkerHost host, MarkerEventSink sink, RenderDeps deps) {
         this.host = host;
         this.events = new NativeEventLog(sink);
+        this.renderer = deps == null ? null : new NativeRenderer(points, host, events, deps);
+    }
+
+    /** 测试与诊断：完整模式的内部组件，协议桩模式为 null */
+    NativeRenderer renderer() {
+        return renderer;
     }
 
     /** 载荷是否为新协议；不带 protocolVersion 的请求走旧逻辑（R-PROTO-3） */
@@ -58,16 +70,21 @@ public final class NativeMarkerManager {
             return;
         }
         v2 = true;
-        Object list = params.get("markersToAdd");
-        if (!(list instanceof List)) {
-            return;
+        List<ImageSource> images = parseImagesOrNull(params, "imagesToAdd");
+        if (images == null) {
+            events.error(ERR_INVALID_CONFIG, null, null, "创建参数 imagesToAdd 结构错误");
         }
-        for (Object raw : (List<?>) list) {
-            String id = FullMarkerOptions.readId(raw);
-            if (id != null && !applyOne(raw, id)) {
-                initialRejected.add(id);
+        registerImages(images); // 初始资源先于初始点位
+        Object list = params.get("markersToAdd");
+        if (list instanceof List) {
+            for (Object raw : (List<?>) list) {
+                String id = FullMarkerOptions.readId(raw);
+                if (id != null && !applyOne(raw, id)) {
+                    initialRejected.add(id);
+                }
             }
         }
+        refreshDone();
     }
 
     /**
@@ -76,11 +93,15 @@ public final class NativeMarkerManager {
      */
     public Map<String, Object> attach() {
         v2 = true;
-        Map<String, Object> images = new HashMap<>();
-        // S5 没有资源注册表，资源状态为空（S8 接入）
-        images.put("ready", new ArrayList<>());
-        images.put("failed", new ArrayList<>());
-        images.put("pending", new ArrayList<>());
+        Map<String, Object> images;
+        if (renderer != null) {
+            images = renderer.registry.snapshot(); // 握手前的资源结果只在这里交付（R-INIT-2/3）
+        } else {
+            images = new HashMap<>();
+            images.put("ready", new ArrayList<>());
+            images.put("failed", new ArrayList<>());
+            images.put("pending", new ArrayList<>());
+        }
         Map<String, Object> selection = new HashMap<>();
         selection.put("selectedId", null);
         selection.put("revision", 0);
@@ -100,14 +121,18 @@ public final class NativeMarkerManager {
     /** 新协议 markers#update（§6.2、§6.5）；结构错误时整体不修改，accepted=false */
     public Map<String, Object> update(Object args) {
         int syncId = readSyncId(args);
-        if (disposed || !isValidStructure(args, "markersToAdd", "markersToChange")) {
+        List<ImageSource> images = disposed ? null : parseImagesOrNull(args, "imagesToAdd");
+        List<String> releases = disposed ? null : stringsOrNull(args, "imageIdsToRelease");
+        if (images == null || releases == null
+                || !isValidStructure(args, "markersToAdd", "markersToChange")) {
             return result(syncId, false, new ArrayList<String>());
         }
         v2 = true;
         initialRejected.clear();
         Map<?, ?> m = (Map<?, ?>) args;
         List<String> rejected = new ArrayList<>();
-        // 顺序：登记资源 → 删除 → 新增 → 修改 → 释放资源（S5 无资源注册表，资源两步跳过）
+        // 顺序：登记资源 → 删除 → 新增 → 修改 → 释放资源（§6.2）
+        registerImages(images);
         Object removes = m.get("markerIdsToRemove");
         if (removes instanceof List) {
             for (Object id : (List<?>) removes) {
@@ -118,6 +143,10 @@ public final class NativeMarkerManager {
         }
         applyList(m.get("markersToAdd"), rejected);
         applyList(m.get("markersToChange"), rejected);
+        if (renderer != null) {
+            renderer.releaseImages(releases);
+        }
+        refreshDone();
         lastSyncId = syncId;
         return result(syncId, true, rejected);
     }
@@ -125,11 +154,13 @@ public final class NativeMarkerManager {
     /** markers#resync：以快照为唯一期望状态，多余点位全部删除（R-RES-9） */
     public Map<String, Object> resync(Object args) {
         int syncId = readSyncId(args);
-        if (disposed || !isValidStructure(args, "markers")) {
+        List<ImageSource> images = disposed ? null : parseImagesOrNull(args, "images");
+        if (images == null || !isValidStructure(args, "markers")) {
             return result(syncId, false, new ArrayList<String>());
         }
         v2 = true;
         initialRejected.clear();
+        registerImages(images);
         Object list = ((Map<?, ?>) args).get("markers");
         Set<String> keep = new HashSet<>();
         for (Object raw : (List<?>) list) {
@@ -142,11 +173,19 @@ public final class NativeMarkerManager {
         }
         for (String id : points.ids()) {
             if (!keep.contains(id)) {
-                points.remove(id);
+                removeOne(id);
             }
         }
         List<String> rejected = new ArrayList<>();
         applyList(list, rejected);
+        if (renderer != null) {
+            Set<String> keepImages = new HashSet<>();
+            for (ImageSource s : images) {
+                keepImages.add(s.id);
+            }
+            renderer.releaseImagesExcept(keepImages); // R-RES-9
+        }
+        refreshDone();
         lastSyncId = syncId;
         return result(syncId, true, rejected);
     }
@@ -161,11 +200,19 @@ public final class NativeMarkerManager {
         }
         disposed = true;
         events.close();
+        if (renderer != null) {
+            renderer.dispose(); // 先按引用规则移除 native 点（§8.6）
+        }
         for (String id : snapshotIds(host.markerIds())) {
             host.removeMarker(id);
         }
         points.clear();
         initialRejected.clear();
+    }
+
+    /** 两阶段销毁是否最终完成（最后一个 running 任务归还后） */
+    public boolean isTerminated() {
+        return disposed && (renderer == null || renderer.isTerminated());
     }
 
     private void applyList(Object list, List<String> rejected) {
@@ -194,6 +241,9 @@ public final class NativeMarkerManager {
             return false;
         }
         boolean exists = host.hasMarker(id);
+        if (renderer != null) {
+            return applyFullMode(opt, icon, exists);
+        }
         if (opt.isNative()) {
             points.put(opt);
             // icon→native：绘制完成前保留旧图标（R-PROTO-4）；新增先用占位图标
@@ -214,9 +264,47 @@ public final class NativeMarkerManager {
         return true;
     }
 
+    /** 完整模式：native 交给渲染器（新增点在位图就绪前不 addMarker，R-RES-5） */
+    private boolean applyFullMode(FullMarkerOptions opt, Object icon, boolean exists) {
+        if (opt.isNative()) {
+            renderer.applyNative(opt);
+            return true;
+        }
+        try {
+            if (exists) {
+                host.updateMarker(opt, icon);
+            } else {
+                host.addMarker(opt, icon);
+            }
+        } catch (RuntimeException e) {
+            events.error(ERR_APPLY_FAILED, opt.id, null, String.valueOf(e.getMessage()));
+        }
+        // native→icon：setIcon(icon) 返回之后才归还原生显示引用（R-CACHE-1、R-PROTO-4）
+        if (points.get(opt.id) != null) {
+            renderer.releaseNative(opt.id);
+        }
+        return true;
+    }
+
     private void removeOne(String id) {
+        if (renderer != null && points.get(id) != null) {
+            renderer.removeNative(id); // 代次校验 + remove() 后归还引用（R-GEN-6）
+            return;
+        }
         points.remove(id);
         host.removeMarker(id);
+    }
+
+    private void registerImages(List<ImageSource> images) {
+        if (renderer != null && images != null) {
+            renderer.registerImages(images);
+        }
+    }
+
+    private void refreshDone() {
+        if (renderer != null) {
+            renderer.refreshDone();
+        }
     }
 
     private static boolean isValidStructure(Object args, String... listKeys) {
@@ -242,17 +330,64 @@ public final class NativeMarkerManager {
         return removes == null || removes instanceof List;
     }
 
+    /** 资源列表：缺省为空；结构错误返回 null（整个请求 accepted=false） */
+    private static List<ImageSource> parseImagesOrNull(Object args, String key) {
+        Object v = args instanceof Map ? ((Map<?, ?>) args).get(key) : null;
+        List<ImageSource> out = new ArrayList<>();
+        if (v == null) {
+            return out;
+        }
+        if (!(v instanceof List)) {
+            return null;
+        }
+        try {
+            for (Object raw : (List<?>) v) {
+                out.add(ImageSource.parse(raw));
+            }
+        } catch (InvalidMarkerException e) {
+            return null;
+        }
+        return out;
+    }
+
+    private static List<String> stringsOrNull(Object args, String key) {
+        Object v = args instanceof Map ? ((Map<?, ?>) args).get(key) : null;
+        List<String> out = new ArrayList<>();
+        if (v == null) {
+            return out;
+        }
+        if (!(v instanceof List)) {
+            return null;
+        }
+        for (Object o : (List<?>) v) {
+            if (o instanceof String) {
+                out.add((String) o);
+            }
+        }
+        return out;
+    }
+
     private static int readSyncId(Object args) {
         Object v = args instanceof Map ? ((Map<?, ?>) args).get("syncId") : null;
         return v instanceof Number ? ((Number) v).intValue() : 0;
     }
 
-    private static Map<String, Object> result(int syncId, boolean accepted, List<String> rejected) {
+    private static Map<String, Object> baseResult(int syncId, boolean accepted,
+                                                  List<String> rejected) {
         Map<String, Object> r = new HashMap<>();
         r.put("syncId", syncId);
         r.put("accepted", accepted);
         r.put("rejectedMarkerIds", rejected);
         r.put("imagesPending", new ArrayList<String>());
+        return r;
+    }
+
+    /** 返回值带上当前仍为 pending 的资源（§6.5） */
+    private Map<String, Object> result(int syncId, boolean accepted, List<String> rejected) {
+        Map<String, Object> r = baseResult(syncId, accepted, rejected);
+        if (renderer != null && accepted) {
+            r.put("imagesPending", renderer.registry.pendingIds());
+        }
         return r;
     }
 

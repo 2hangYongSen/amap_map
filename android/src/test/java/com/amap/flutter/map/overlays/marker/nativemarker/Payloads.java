@@ -41,6 +41,48 @@ final class Payloads {
         return m;
     }
 
+    /** native 点位，指定纬度（只改位置的测试用） */
+    static Map<String, Object> nativeAt(String id, String text, double lat) {
+        Map<String, Object> m = nativeMarker(id, text);
+        m.put("position", Arrays.asList(lat, 116.4));
+        return m;
+    }
+
+    /** 可选中的 native 点位，带选中态样式（P2 预热测试用） */
+    @SuppressWarnings("unchecked")
+    static Map<String, Object> selectable(String id, String text) {
+        Map<String, Object> m = nativeMarker(id, text);
+        m.put("selectable", true);
+        Map<String, Object> p = (Map<String, Object>) m.get("nativePresentation");
+        Map<String, Object> sel = new HashMap<>((Map<String, Object>) p.get("style"));
+        sel.put("textColor", 0xFFFF0000L);
+        p.put("selectedStyle", sel);
+        return m;
+    }
+
+    /** 背景为图片资源的 native 点位（固定尺寸，避免依赖解码尺寸） */
+    @SuppressWarnings("unchecked")
+    static Map<String, Object> withImage(String id, String text, String imageId) {
+        Map<String, Object> m = nativeMarker(id, text);
+        Map<String, Object> p = (Map<String, Object>) m.get("nativePresentation");
+        Map<String, Object> bg = new HashMap<>();
+        bg.put("type", "image");
+        bg.put("imageId", imageId);
+        bg.put("size", Arrays.asList(40.0, 20.0));
+        ((Map<String, Object>) p.get("style")).put("background", bg);
+        return m;
+    }
+
+    /** imagesToAdd 的一项（bytes） */
+    static Map<String, Object> bytesImage(String id) {
+        Map<String, Object> m = new HashMap<>();
+        m.put("id", id);
+        m.put("type", "bytes");
+        m.put("data", new byte[]{1, 2, 3});
+        m.put("pixelRatio", 2.0);
+        return m;
+    }
+
     static Map<String, Object> base(String id) {
         Map<String, Object> m = new HashMap<>();
         m.put("id", id);

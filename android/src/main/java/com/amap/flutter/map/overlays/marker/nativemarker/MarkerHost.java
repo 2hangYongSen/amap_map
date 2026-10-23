@@ -25,4 +25,13 @@ public interface MarkerHost {
 
     /** native 点位尚未绘制时的占位图标（S5：默认 icon） */
     Object defaultIcon();
+
+    /** 新增 native Marker：图标与锚点来自合成画布（§9.2），其余属性取最新快照（R-GEN-4） */
+    void addNativeMarker(FullMarkerOptions options, NativeIcon icon);
+
+    /**
+     * 更新已有 Marker 为 native 外观。icon 非空：setIcon + 锚点 + 属性；
+     * icon 为空：只更新位置等属性，不改图标与锚点（R-GEN-5）
+     */
+    void updateNativeMarker(FullMarkerOptions options, NativeIcon icon);
 }
