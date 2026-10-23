@@ -118,6 +118,16 @@ class AMapWidget extends StatefulWidget {
   /// 原生点位错误回调（解码失败、异步校验失败等）
   final ValueChanged<NativeMarkerError>? onNativeMarkerError;
 
+  /// 原生单选配置；为空表示关闭自动选择。非空时地图启用新协议
+  final MarkerSelectionOptions? markerSelection;
+
+  /// 选择变化回调。只需把结果写回业务状态，不要在其中调用
+  /// `setSelectedMarker`（传入相同 id 不会产生任何效果）
+  final ValueChanged<MarkerSelectionChange>? onMarkerSelectionChanged;
+
+  /// 集合替换的过渡策略，默认立即删除（与 1.0.15 一致）
+  final MarkerTransition markerTransition;
+
   /// 创建一个展示高德地图的widget
   ///
   /// 在app首次启动时必须传入高德合规声明配置[privacyStatement],后续如果没有变化不需要重复设置
@@ -165,7 +175,10 @@ class AMapWidget extends StatefulWidget {
       this.logoBottomMargin,
       this.logoLeftMargin,
       this.markerImages = const <MarkerImageResource>{},
-      this.onNativeMarkerError});
+      this.onNativeMarkerError,
+      this.markerSelection,
+      this.onMarkerSelectionChanged,
+      this.markerTransition = const MarkerTransition.immediate()});
 
   ///
   @override
@@ -181,6 +194,10 @@ class _MapState extends State<AMapWidget> {
   final Completer<AMapController> _controller = Completer<AMapController>();
   late _AMapOptions _mapOptions;
   late final MarkerSyncQueue _markerQueue;
+
+  // 会话代次：dispose 时递增，异步续体据此判断是否已失效
+  int _session = 0;
+  AMapController? _readyController;
 
   // 创建参数只在首次 build 计算，平台视图只在首次创建时使用（R-SYNC-4）
   Map<String, dynamic>? _creationParams;
@@ -223,13 +240,13 @@ class _MapState extends State<AMapWidget> {
   }
 
   @override
-  void dispose() async {
-    // 同步停止发送队列，迟到结果不再推进状态
+  void dispose() {
+    // 同步标记会话失效，不等待尚未完成的控制器初始化（R-DART-DISP）
+    _session++;
     _markerQueue.dispose();
+    // 控制器已就绪就立即取消订阅；未就绪的由 _initForSession 在返回时清理
+    _readyController?.disponse();
     super.dispose();
-    AMapController controller = await _controller.future;
-    controller.disponse();
-    print('dispose AMapWidget with mapId: ${controller.mapId}');
   }
 
   @override
@@ -254,11 +271,14 @@ class _MapState extends State<AMapWidget> {
   }
 
   Future<void> onPlatformViewCreated(int id) async {
-    final AMapController controller = await AMapController.init(
-      id,
-      widget.initialCameraPosition,
-      this,
-    );
+    // 捕获会话代次：销毁或重建后，迟到的初始化只清理不握手（R-DART-DISP）
+    final int session = _session;
+    final AMapController? controller = await AMapController._initForSession(
+        id, this, () => !mounted || session != _session);
+    if (controller == null) {
+      return;
+    }
+    _readyController = controller;
     _controller.complete(controller);
     // 订阅已在控制器构造时建立，之后才确认初始快照或握手（R-INIT-1）
     _markerQueue.attachTransport(controller._markerTransport);
@@ -269,8 +289,10 @@ class _MapState extends State<AMapWidget> {
     }
   }
 
+  /// 点击分发：先查当前点位，再查过渡中的待删除点（R-DEL-3）
   void onMarkerTap(String markerId) {
-    final Marker? marker = _markers[markerId];
+    final Marker? marker =
+        _markers[markerId] ?? _markerQueue.retiringMarker(markerId);
     if (marker != null) {
       final ArgumentCallback<String>? onTap = marker.onTap;
       if (onTap != null) {
@@ -317,6 +339,8 @@ class _MapState extends State<AMapWidget> {
   /// 不向上抛出，避免地图子树被替换成错误组件。
   void updateMarkers() {
     try {
+      // 选项先于点位写入，握手后按“选项 → 点位”的顺序发送（R-INIT-7）
+      _markerQueue.setOptions(_markerOptions());
       _markerQueue.setTarget(widget.markers, widget.markerImages);
     } on ArgumentError catch (e, s) {
       _reportMarkerError(e, s);
@@ -334,18 +358,36 @@ class _MapState extends State<AMapWidget> {
     ));
   }
 
+  MarkerSyncOptions _markerOptions() => MarkerSyncOptions(
+        selection: widget.markerSelection,
+        transition: widget.markerTransition,
+      );
+
+  /// 回调总是读取最新的 widget；队列销毁后不会再调用（R-DART-DISP）
+  MarkerSyncCallbacks get _markerCallbacks => MarkerSyncCallbacks(
+        // 异步校验失败等原生错误只上报，不回退、不重发（R-SYNC-8）
+        onNativeError: (NativeMarkerError e) =>
+            widget.onNativeMarkerError?.call(e),
+        onSelectionChanged: (MarkerSelectionChange c) =>
+            widget.onMarkerSelectionChanged?.call(c),
+      );
+
   /// 初始点位校验失败时上报，并先按空集合创建，后续合法更新照常发送
   MarkerSyncQueue _createMarkerQueue() {
     try {
       return MarkerSyncQueue(
         markers: widget.markers,
         images: widget.markerImages,
+        options: _markerOptions(),
         onSyncError: _onMarkerSyncError,
+        callbacks: _markerCallbacks,
       );
     } on ArgumentError catch (e, s) {
       _reportMarkerError(e, s);
       return MarkerSyncQueue(
-          markers: const <Marker>{}, onSyncError: _onMarkerSyncError);
+          markers: const <Marker>{},
+          onSyncError: _onMarkerSyncError,
+          callbacks: _markerCallbacks);
     }
   }
 
@@ -357,8 +399,9 @@ class _MapState extends State<AMapWidget> {
 
   /// 本地回调索引与 InfoWindow，沿用原先在控制器就绪后处理的时序
   void _syncLocalMarkers() async {
+    final int session = _session;
     await _controller.future;
-    if (!mounted) {
+    if (!mounted || session != _session) {
       return;
     }
     final Set<String> currentIds =

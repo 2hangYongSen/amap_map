@@ -51,6 +51,7 @@ MarkerSyncDiff computeMarkerDiff({
   required Map<String, MarkerImageResource> confirmedImages,
   required Map<String, Marker> target,
   required Map<String, MarkerImageResource> targetImages,
+  Set<String> resendImageIds = const <String>{},
 }) {
   final Map<String, Marker> adds = <String, Marker>{};
   final Map<String, Marker> changes = <String, Marker>{};
@@ -71,7 +72,8 @@ MarkerSyncDiff computeMarkerDiff({
   final Map<String, MarkerImageResource> imagesToAdd =
       <String, MarkerImageResource>{};
   targetImages.forEach((String id, MarkerImageResource r) {
-    if (!confirmedImages.containsKey(id)) {
+    // 未登记的新资源，或需要重试的已登记资源（R-RES-4/8）
+    if (!confirmedImages.containsKey(id) || resendImageIds.contains(id)) {
       imagesToAdd[id] = r;
     }
   });
