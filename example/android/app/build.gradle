@@ -73,6 +73,8 @@ android {
     ndkVersion '27.0.12077973'
 }
 dependencies {
+    // S6 SDK 实验（src/debug/.../experiments）直接调用高德 SDK；版本与插件一致，仅 debug 包
+    debugImplementation 'com.amap.api:3dmap-location-search:10.1.200_loc6.4.9_sea9.7.4'
 }
 
 flutter {

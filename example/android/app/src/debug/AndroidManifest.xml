@@ -4,4 +4,12 @@
          to allow setting breakpoints, to provide hot reload, etc.
     -->
     <uses-permission android:name="android.permission.INTERNET" />
+    <application>
+        <!-- S6 SDK 实验宿主，仅 debug 包；由 tool/s6_run.sh 通过 am start 启动 -->
+        <activity
+            android:name=".experiments.ExpHost"
+            android:configChanges="orientation|screenSize|uiMode"
+            android:launchMode="singleTop"
+            android:exported="true" />
+    </application>
 </manifest>
