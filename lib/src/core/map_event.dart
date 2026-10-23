@@ -68,6 +68,11 @@ class PolylineTapEvent extends MapEvent<String> {
   PolylineTapEvent(super.mapId, super.polylineId);
 }
 
+/// 原生点位错误事件
+class NativeMarkerErrorEvent extends MapEvent<NativeMarkerError> {
+  NativeMarkerErrorEvent(super.mapId, super.error);
+}
+
 /// Poi点击事件
 class MapPoiTouchEvent extends MapEvent<AMapPoi> {
   MapPoiTouchEvent(super.mapId, super.poi);
