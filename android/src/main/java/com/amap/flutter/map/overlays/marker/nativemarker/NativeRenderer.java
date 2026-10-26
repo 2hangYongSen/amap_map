@@ -40,7 +40,8 @@ final class NativeRenderer implements ImageRegistry.Listener, RenderPipeline.Lis
     private boolean disposed = false;
     private boolean terminated = false;
 
-    NativeRenderer(PointTable points, MarkerHost host, NativeEventLog events, RenderDeps d) {
+    NativeRenderer(PointTable points, MarkerHost host, NativeEventLog events, RenderDeps d,
+                   SelectionState selection) {
         this.points = points;
         this.host = host;
         this.events = events;
@@ -55,8 +56,26 @@ final class NativeRenderer implements ImageRegistry.Listener, RenderPipeline.Lis
         cache = new RenderCache(d.icons, d.cacheBudget);
         scheduler = new RenderScheduler(registry, d.runner, d.painter, d.densityUnits, d.maxRunning);
         applier = new FrameApplier(d.clock, d.frameBudgetNanos);
-        pipeline = new RenderPipeline(points, cache, scheduler, applier, host, d.icons);
+        pipeline = new RenderPipeline(points, cache, scheduler, applier, host, d.icons, selection);
         pipeline.setListener(this);
+    }
+
+    /** 替换过渡：新点应用或失败后重新判断能否删除旧点（R-DEL-2/5） */
+    private ReplaceTransition transition;
+
+    void setTransition(ReplaceTransition t) {
+        this.transition = t;
+    }
+
+    private void checkTransition() {
+        if (transition != null && !disposed) {
+            transition.check();
+        }
+    }
+
+    /** 本次 update 中该点是否需要等待绘制（替换过渡的等待条件） */
+    boolean needsWait(String id) {
+        return !settled(id);
     }
 
     // ---------- 资源 ----------
@@ -93,7 +112,8 @@ final class NativeRenderer implements ImageRegistry.Listener, RenderPipeline.Lis
         if (host.hasMarker(opt.id)) {
             try {
                 if (e.shown != null) {
-                    host.updateNativeMarker(opt, null); // 只改属性，如 setPosition（R-GEN-5）
+                    // 只改属性，如 setPosition（R-GEN-5）；zIndex 按当前显示的状态
+                    host.updateNativeMarker(opt, null, e.shownSelected);
                 } else {
                     host.updateMarker(opt, null); // icon→native：完成前保留旧图标（R-PROTO-4）
                 }
@@ -196,7 +216,7 @@ final class NativeRenderer implements ImageRegistry.Listener, RenderPipeline.Lis
                 ? RenderKey.selectedKey(spec, densityUnits, registry) : null;
     }
 
-    /** 两个 role 各自判断是否还需要接收路径（R-GEN-2、R-GEN-5、R-PRI-1） */
+    /** 两个 role 各自判断是否还需要接收路径（R-GEN-2、R-GEN-5、R-PRI-1/2、R-CACHE-6） */
     private void reconcileRoles(PointTable.Entry e) {
         e.hidden = shouldHide(e.desired.spec);
         if (e.hidden) {
@@ -204,16 +224,65 @@ final class NativeRenderer implements ImageRegistry.Listener, RenderPipeline.Lis
             pipeline.removeMarker(e);
             return;
         }
-        boolean needNormal = (e.shown == null || !e.shown.key.equals(e.normalKey))
-                && !e.normalKey.equals(e.failedKey[0]);
-        pipeline.reconcile(e, false, needNormal, RenderTask.P1);
-        pipeline.reconcile(e, true, needsPrewarm(e) && prewarmAllowed(), RenderTask.P2);
+        pipeline.dropStaleRetained(e); // normalKey 变化：旧备用立即归还
+        boolean sel = pipeline.wantsSelected(e);
+        pipeline.reconcile(e, false, needsNormal(e, sel), RenderTask.P1);
+        if (sel) {
+            // 选中点缺少的选中态走 P0（R-PRI-2）；期间普通态保持可见
+            pipeline.reconcile(e, true, needsSelected(e), RenderTask.P0);
+        } else {
+            pipeline.reconcile(e, true, needsPrewarm(e) && prewarmAllowed(), RenderTask.P2);
+        }
     }
 
-    /** 选中态预热：只针对 selectable 且选中态尚未就绪的点（§8.3 P2） */
+    /**
+     * 普通态是否还要接收路径：已显示当前普通态不要；选中时有匹配的备用也不要；
+     * 未选中但显示的是选中态时要（备用命中缓存，只生成应用项，不绘制）
+     */
+    static boolean needsNormal(PointTable.Entry e, boolean selected) {
+        if (e.normalKey.equals(e.failedKey[0])) {
+            return false;
+        }
+        if (e.shown != null && !e.shownSelected && e.shown.key.equals(e.normalKey)) {
+            return false;
+        }
+        return !selected || e.retainedNormal == null || !e.retainedNormal.key.equals(e.normalKey);
+    }
+
+    static boolean needsSelected(PointTable.Entry e) {
+        boolean shown = e.shown != null && e.shownSelected && e.shown.key.equals(e.selectedKey);
+        return !shown && !e.selectedKey.equals(e.failedKey[1]);
+    }
+
+    /** 选中态预热：只针对 selectable、未选中且选中态尚未就绪的点（§8.3 P2） */
     private boolean needsPrewarm(PointTable.Entry e) {
         return e.selectedKey != null && !e.isRemoving() && !e.hidden && !cache.contains(e.selectedKey)
-                && !e.selectedKey.equals(e.failedKey[1]);
+                && !e.selectedKey.equals(e.failedKey[1]) && !pipeline.wantsSelected(e);
+    }
+
+    /** 选择变化后（R-SEL-1）：新旧两个点重新判断外观；事件已由调用方先发出 */
+    void selectionChanged(String previousId, String selectedId) {
+        for (String id : new String[]{previousId, selectedId}) {
+            PointTable.Entry e = id == null ? null : points.get(id);
+            if (e != null && !e.isRemoving() && !e.placeholder && !disposed) {
+                reconcileRoles(e);
+            }
+        }
+        afterChange();
+    }
+
+    /**
+     * 替换过渡的等待条件（R-DEL-2/5）：普通态没有待处理的接收路径（已应用或已失败），
+     * 或者已显示当前选中态。P2 预热不阻塞删除。
+     */
+    boolean settled(String id) {
+        PointTable.Entry e = points.get(id);
+        if (e == null || e.hidden || e.isRemoving() || e.placeholder) {
+            return true;
+        }
+        boolean normalIdle = e.waiting[0] == null && e.applying[0] == null;
+        boolean selIdle = e.waiting[1] == null && e.applying[1] == null;
+        return normalIdle || (e.shownSelected && selIdle);
     }
 
     /** R-PRI-3：缓存 ≥90%、刷新后发生过淘汰、仍有 P0/P1 排队，任一成立就停止预热 */
@@ -319,6 +388,12 @@ final class NativeRenderer implements ImageRegistry.Listener, RenderPipeline.Lis
             return;
         }
         evaluatePrewarm();
+        checkTransition(); // 绘制失败也算已处理，不阻塞删除（R-DEL-5）
+    }
+
+    @Override
+    public void applied() {
+        checkTransition();
     }
 
     // ---------- 销毁（§8.6） ----------

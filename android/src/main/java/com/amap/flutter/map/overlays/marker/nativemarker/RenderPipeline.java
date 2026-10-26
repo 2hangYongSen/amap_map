@@ -14,6 +14,9 @@ final class RenderPipeline implements RenderScheduler.Callback, FrameApplier.Sin
 
         /** 任务结束：重新评估预热、检查是否已终止 */
         void afterChange();
+
+        /** 一个应用项处理完（成功或失败）：替换过渡据此判断是否可以删除旧点（R-DEL-2） */
+        void applied();
     }
 
     private final PointTable points;
@@ -24,10 +27,13 @@ final class RenderPipeline implements RenderScheduler.Callback, FrameApplier.Sin
     private MarkerHost host;
     private final IconFactory icons;
     private Listener listener;
+    private final SelectionState selection;
     boolean disposed = false;
 
     RenderPipeline(PointTable points, RenderCache cache, RenderScheduler scheduler,
-                   FrameApplier applier, MarkerHost host, IconFactory icons) {
+                   FrameApplier applier, MarkerHost host, IconFactory icons,
+                   SelectionState selection) {
+        this.selection = selection;
         this.points = points;
         this.cache = cache;
         this.scheduler = scheduler;
@@ -68,7 +74,7 @@ final class RenderPipeline implements RenderScheduler.Callback, FrameApplier.Sin
         String key = sel ? e.selectedKey : e.normalKey;
         RenderCache.Entry c = cache.get(key);
         if (c != null) {
-            if (appliesRole(sel)) {
+            if (appliesRole(e, sel)) {
                 enqueueApply(e, sel, c);
             }
             return; // 未选中点的预热：命中缓存即完成
@@ -79,14 +85,21 @@ final class RenderPipeline implements RenderScheduler.Callback, FrameApplier.Sin
                 : scheduler.create(key, e.desired.spec, sel, priority, e.id, e.generation);
     }
 
-    /** S12 接入选择前只有普通态会被应用；选中态结果只进缓存 */
-    private static boolean appliesRole(boolean sel) {
-        return !sel;
+    /** 当前应显示选中外观：可选中（有 selectedKey）、未待删除、且是 selectedId（§11） */
+    boolean wantsSelected(PointTable.Entry e) {
+        return e.selectedKey != null && !e.isRemoving() && e.id.equals(selection.selectedId());
+    }
+
+    /** 普通态结果总要应用（显示或转为备用）；选中态结果只在仍应选中时应用，否则只进缓存 */
+    private boolean appliesRole(PointTable.Entry e, boolean sel) {
+        return !sel || wantsSelected(e);
     }
 
     private void enqueueApply(PointTable.Entry e, boolean sel, RenderCache.Entry c) {
         cache.addPending(c);
-        ApplyItem it = new ApplyItem(e, e.generation, sel, c, !host.hasMarker(e.id));
+        // 选中态项与“从选中态恢复普通态”的项优先应用（§8.4）
+        ApplyItem it = new ApplyItem(e, e.generation, sel, c, !host.hasMarker(e.id),
+                sel || e.shownSelected);
         e.applying[PointTable.Entry.role(sel)] = it;
         applier.enqueue(it);
     }
@@ -149,7 +162,7 @@ final class RenderPipeline implements RenderScheduler.Callback, FrameApplier.Sin
                 e.failedKey[r] = t.key;
                 listener.renderFailed(e.id, String.valueOf(error == null ? "绘制结果为空"
                         : error.getMessage()));
-            } else if (appliesRole(w.selected)) {
+            } else if (appliesRole(e, w.selected)) {
                 enqueueApply(e, w.selected, c);
             }
         }
@@ -168,24 +181,44 @@ final class RenderPipeline implements RenderScheduler.Callback, FrameApplier.Sin
         e.applying[r] = null;
         cache.dropPending(it.icon);
         it.dropped = true;
-        if (points.get(e.id) != e || !e.isValid(it.generation, it.selected, it.icon.key)) {
+        if (points.get(e.id) == e && e.isValid(it.generation, it.selected, it.icon.key)) {
+            applyValid(e, it);
+        }
+        listener.applied();
+    }
+
+    /** 按当前 selectedId 与 role 决定显示、保留或丢弃（R-CACHE-6 末条） */
+    private void applyValid(PointTable.Entry e, ApplyItem it) {
+        boolean sel = wantsSelected(e);
+        if (it.selected && !sel) {
+            return; // 选择已变化：迟到的选中态只留在缓存（T-SEL-1）
+        }
+        if (!it.selected && sel && e.shownSelected) {
+            retain(e, it.icon); // 备用普通态：只登记保留，不覆盖选中外观
             return;
         }
         RenderCache.Entry old = e.shown;
+        boolean oldSelected = e.shownSelected;
         cache.addDisplay(it.icon); // 先登记新显示，失败再撤回
         try {
             if (host.hasMarker(e.id)) {
-                host.updateNativeMarker(e.desired, it.icon.icon());
+                host.updateNativeMarker(e.desired, it.icon.icon(), it.selected);
             } else {
-                host.addNativeMarker(e.desired, it.icon.icon());
+                host.addNativeMarker(e.desired, it.icon.icon(), it.selected);
             }
         } catch (RuntimeException ex) {
             cache.dropDisplay(it.icon);
-            e.failedKey[r] = it.icon.key;
+            e.failedKey[PointTable.Entry.role(it.selected)] = it.icon.key;
             listener.applyFailed(e.id, String.valueOf(ex.getMessage()));
             return;
         }
         e.shown = it.icon;
+        e.shownSelected = it.selected;
+        if (it.selected) {
+            keepNormalBackup(e, old, oldSelected);
+        } else {
+            releaseRetained(e); // 普通态已取得显示引用，再归还备用，引用转移无空档
+        }
         // R-CACHE-1：旧条目在 setIcon(new) 返回之后才减 1
         if (old != null) {
             cache.dropDisplay(old);
@@ -193,22 +226,60 @@ final class RenderPipeline implements RenderScheduler.Callback, FrameApplier.Sin
         cache.enforceBudget();
     }
 
+    /** 切到选中态后：备用必须对应当前 normalKey，取自旧普通态显示或已就绪缓存 */
+    private void keepNormalBackup(PointTable.Entry e, RenderCache.Entry old, boolean oldSelected) {
+        if (e.retainedNormal != null && e.retainedNormal.key.equals(e.normalKey)) {
+            return;
+        }
+        RenderCache.Entry c = old != null && !oldSelected && old.key.equals(e.normalKey)
+                ? old : cache.get(e.normalKey);
+        if (c != null) {
+            retain(e, c);
+        } else {
+            releaseRetained(e); // 普通态还没就绪：接收路径照常保留，就绪后再取得备用
+        }
+    }
+
+    /** 取得备用引用（同一条目不重复取）；旧备用随后归还 */
+    private void retain(PointTable.Entry e, RenderCache.Entry c) {
+        if (e.retainedNormal == c) {
+            return;
+        }
+        cache.addRetained(c);
+        releaseRetained(e);
+        e.retainedNormal = c;
+    }
+
+    /** 归还备用引用（删除、native→icon、销毁、恢复普通态、normalKey 失效） */
+    void releaseRetained(PointTable.Entry e) {
+        if (e.retainedNormal != null) {
+            cache.dropRetained(e.retainedNormal);
+            e.retainedNormal = null;
+        }
+    }
+
+    /** normalKey 变化后备用失效：立即撤销（R-CACHE-6） */
+    void dropStaleRetained(PointTable.Entry e) {
+        if (e.retainedNormal != null && !e.retainedNormal.key.equals(e.normalKey)) {
+            releaseRetained(e);
+        }
+    }
+
     /** 点位删除：remove() 返回之后才归还显示引用（R-CACHE-1） */
     void removeMarker(PointTable.Entry e) {
         revokeAll(e);
         host.removeMarker(e.id);
-        if (e.shown != null) {
-            cache.dropDisplay(e.shown);
-            e.shown = null;
-        }
+        releaseShown(e);
     }
 
-    /** native→icon：放弃原生显示引用，Marker 本身由调用方改成 icon */
+    /** native→icon：放弃原生显示引用与备用，Marker 本身由调用方改成 icon */
     void releaseShown(PointTable.Entry e) {
         revokeAll(e);
         if (e.shown != null) {
             cache.dropDisplay(e.shown);
             e.shown = null;
         }
+        e.shownSelected = false;
+        releaseRetained(e);
     }
 }

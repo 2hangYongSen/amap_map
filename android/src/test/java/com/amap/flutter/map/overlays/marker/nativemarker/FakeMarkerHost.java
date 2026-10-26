@@ -13,6 +13,8 @@ final class FakeMarkerHost implements MarkerHost {
     static final class Shown {
         FullMarkerOptions options;
         Object icon;
+        /** 实际生效的 zIndex（选中置顶，§8.5） */
+        float zIndex;
     }
 
     final Map<String, Shown> markers = new LinkedHashMap<>();
@@ -80,22 +82,24 @@ final class FakeMarkerHost implements MarkerHost {
     boolean failNextNative = false;
 
     @Override
-    public void addNativeMarker(FullMarkerOptions options, NativeIcon icon) {
+    public void addNativeMarker(FullMarkerOptions options, NativeIcon icon, boolean selected) {
         failIfAsked();
         calls.add("add:" + options.id);
         Shown s = new Shown();
         s.options = options;
         s.icon = icon.descriptor;
+        s.zIndex = options.zIndexFor(selected);
         markers.put(options.id, s);
     }
 
     @Override
-    public void updateNativeMarker(FullMarkerOptions options, NativeIcon icon) {
+    public void updateNativeMarker(FullMarkerOptions options, NativeIcon icon, boolean selected) {
         failIfAsked();
         // icon 为空即只改属性，相当于 setPosition 等（T-GEN-2/4 计数用）
         calls.add((icon == null ? "props:" : "setIcon:") + options.id);
         Shown s = markers.get(options.id);
         s.options = options;
+        s.zIndex = options.zIndexFor(selected);
         if (icon != null) {
             s.icon = icon.descriptor;
         }

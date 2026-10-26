@@ -18,9 +18,17 @@ final class RenderInvariants {
         NativeRenderer r = h.r();
         Map<RenderCache.Entry, Integer> display = new HashMap<>();
         Map<RenderCache.Entry, Integer> pending = new HashMap<>();
+        Map<RenderCache.Entry, Integer> retained = new HashMap<>();
         Set<RenderTask> referenced = new HashSet<>();
         int waiterCount = 0;
         for (PointTable.Entry e : h.manager.points().values()) {
+            if (e.retainedNormal != null) {
+                retained.merge(e.retainedNormal, 1, Integer::sum);
+                // 备用必须对应当前 normalKey，且只在显示选中态时持有（R-CACHE-6）
+                assertEquals(e.id + " 备用 key", e.normalKey, e.retainedNormal.key);
+                assertTrue(e.id + " 备用只属于选中显示", e.shownSelected);
+                assertNotNull(e.id + " 备用条目必须在缓存中", r.cache.get(e.retainedNormal.key));
+            }
             if (e.shown != null) {
                 display.merge(e.shown, 1, Integer::sum);
                 // 显示条目对应的 Marker 确实在地图上并显示该 descriptor
@@ -53,16 +61,23 @@ final class RenderInvariants {
                 assertTrue(e.id + " 隐藏点不应有接收路径", e.waiting[0] == null && e.applying[0] == null);
                 continue;
             }
-            boolean needNormal = !e.isRemoving() && (e.shown == null || !e.shown.key.equals(e.normalKey))
-                    && !e.normalKey.equals(e.failedKey[0]);
+            boolean sel = r.pipeline().wantsSelected(e);
+            boolean needNormal = !e.isRemoving() && NativeRenderer.needsNormal(e, sel);
             if (needNormal && !r.isTerminated()) {
                 assertTrue(e.id + " 缺少普通态接收路径", e.waiting[0] != null || e.applying[0] != null);
+            }
+            // 选中点缺少选中态时必须有接收路径（R-PRI-2）
+            if (sel && NativeRenderer.needsSelected(e) && !r.isTerminated()) {
+                assertTrue(e.id + " 缺少选中态接收路径", e.waiting[1] != null || e.applying[1] != null);
             }
         }
         for (RenderCache.Entry c : r.cache.entries()) {
             assertEquals(c.key + " displayRefs", (int) display.getOrDefault(c, 0), c.displayRefs());
             assertEquals(c.key + " pendingRefs", (int) pending.getOrDefault(c, 0), c.pendingRefs());
-            assertEquals(c.key + " retainedRefs", 0, c.retainedRefs());
+            assertEquals(c.key + " retainedRefs", (int) retained.getOrDefault(c, 0), c.retainedRefs());
+        }
+        for (RenderCache.Entry c : retained.keySet()) {
+            assertTrue("备用条目不可淘汰", !c.evictable());
         }
         for (RenderCache.Entry c : display.keySet()) {
             assertNotNull("显示中的条目必须仍在缓存中", r.cache.get(c.key));

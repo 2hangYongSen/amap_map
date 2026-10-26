@@ -173,6 +173,13 @@ public class MarkersController
                 LogUtil.i(CLASS_NAME, "markers#resync result==>" + r);
                 result.success(r);
                 break;
+            case Const.METHOD_MARKER_SET_SELECTED:
+                if (disposed) {
+                    result.error("disposed", "map disposed", null);
+                } else {
+                    result.success(nativeManager.setSelected(call.arguments));
+                }
+                break;
         }
     }
 
@@ -288,20 +295,29 @@ public class MarkersController
     @Override
     public void onMapClick(LatLng latLng) {
         hideMarkerInfoWindow(selectedMarkerDartId, null);
+        nativeManager.onMapTap(); // 未开启自动选择时无操作（R-SEL-9）
     }
 
+    /** map#update.options 中的 markerSelection、markerTransition（由 MapController 转交） */
+    public void applyMapOptions(Map<?, ?> options) {
+        nativeManager.applyOptions(options);
+    }
+
+    /**
+     * 对插件管理的所有点位（含非 selectable 与过渡点）一律返回 true，
+     * SDK 就不会再补发 onMapClick / onPOIClick（R-SEL-8、E-A4）
+     */
     @Override
     public boolean onMarkerClick(Marker marker) {
         String dartId = idMapByOverlyId.get(marker.getId());
         if (null == dartId) {
             return false;
         }
-        final Map<String, Object> data = new HashMap<>(1);
-        data.put("markerId", dartId);
         selectedMarkerDartId = dartId;
         showMarkerInfoWindow(dartId);
-        methodChannel.invokeMethod("marker#onTap", data);
-        LogUtil.i(CLASS_NAME, "onMarkerClick==>" + data);
+        // R-SEL-3：先提交选择并发 selectionChanged，再发 marker#onTap，同一回调内顺序固定
+        nativeManager.onMarkerTap(dartId);
+        LogUtil.i(CLASS_NAME, "onMarkerClick==>" + dartId);
         return true;
     }
 
@@ -390,18 +406,21 @@ public class MarkersController
         }
 
         @Override
-        public void addNativeMarker(FullMarkerOptions o, NativeIcon icon) {
+        public void addNativeMarker(FullMarkerOptions o, NativeIcon icon, boolean selected) {
             addMarker(o, icon.descriptor);
+            MarkerController controller = controllerMapByDartId.get(o.id);
             // native 点位锚点来自合成画布（§9.2），覆盖 options.anchor
-            controllerMapByDartId.get(o.id).setAnchor(icon.anchorU, icon.anchorV);
+            controller.setAnchor(icon.anchorU, icon.anchorV);
+            controller.setZIndex(o.zIndexFor(selected));
         }
 
         @Override
-        public void updateNativeMarker(FullMarkerOptions o, NativeIcon icon) {
+        public void updateNativeMarker(FullMarkerOptions o, NativeIcon icon, boolean selected) {
             MarkerController controller = controllerMapByDartId.get(o.id);
             if (null != controller) {
                 controller.applyNative(o, icon == null ? null : (BitmapDescriptor) icon.descriptor,
-                        icon == null ? -1 : icon.anchorU, icon == null ? -1 : icon.anchorV);
+                        icon == null ? -1 : icon.anchorU, icon == null ? -1 : icon.anchorV,
+                        selected);
             }
         }
     }

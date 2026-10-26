@@ -48,6 +48,21 @@ final class Payloads {
         return m;
     }
 
+    /** 可选中、带 selectedZIndex 的点位 */
+    static Map<String, Object> selectableZ(String id, String text, double zIndex, double selZ) {
+        Map<String, Object> m = selectable(id, text);
+        m.put("zIndex", zIndex);
+        m.put("selectedZIndex", selZ);
+        return m;
+    }
+
+    /** 可选中点位，指定纬度 */
+    static Map<String, Object> selectableAt(String id, String text, double lat) {
+        Map<String, Object> m = selectable(id, text);
+        m.put("position", Arrays.asList(lat, 116.4));
+        return m;
+    }
+
     /** 可选中的 native 点位，带选中态样式（P2 预热测试用） */
     @SuppressWarnings("unchecked")
     static Map<String, Object> selectable(String id, String text) {

@@ -37,6 +37,10 @@ public final class PointTable {
         boolean hidden;
         /** R-NAT-REJ-2：已为该 normalKey 报过 invalidConfig，key 变化前不再报 */
         String capErrorKey;
+        /** 选中点的普通态备用引用（R-CACHE-6），只能指向当前 normalKey 的条目 */
+        RenderCache.Entry retainedNormal;
+        /** shown 是否为选中态条目 */
+        boolean shownSelected;
 
         Entry(String id) {
             this.id = id;
@@ -60,6 +64,14 @@ public final class PointTable {
 
         public RenderCache.Entry shown() {
             return shown;
+        }
+
+        public RenderCache.Entry retainedNormal() {
+            return retainedNormal;
+        }
+
+        public boolean shownSelected() {
+            return shownSelected;
         }
 
         public boolean isRemoving() {

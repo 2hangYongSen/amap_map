@@ -46,10 +46,13 @@ public class Const {
     public static final String METHOD_MARKER_ATTACH = "markers#attach";
     /** 新协议全量恢复（R-RES-9） */
     public static final String METHOD_MARKER_RESYNC = "markers#resync";
+    /** 原生单选（§11） */
+    public static final String METHOD_MARKER_SET_SELECTED = "markers#setSelected";
     public static final String[] METHOD_ID_LIST_FOR_MARKER = {
             METHOD_MARKER_UPDATE,
             METHOD_MARKER_ATTACH,
-            METHOD_MARKER_RESYNC
+            METHOD_MARKER_RESYNC,
+            METHOD_MARKER_SET_SELECTED
     };
 
     /**
