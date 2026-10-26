@@ -79,7 +79,25 @@ final class NativeMarkerShapeBackground extends NativeMarkerBackground {
       'borderWidth: $borderWidth}';
 }
 
-/// 图片背景。[capInsets] 非空表示九宫格拉伸；为空时按 [size] 或图片逻辑尺寸固定显示。
+/// 图片背景，有两种用法：
+///
+/// - **九宫格**（[capInsets] 非空）：宽高随文字变化，规则与圆角矩形相同
+///   （文字宽 + `padding`，受 `width`/`minWidth`/`maxWidth` 约束）。图片按
+///   [capInsets] 切成 9 块：四角不拉伸，四边单向拉伸，中间双向拉伸（只拉伸、不平铺）。
+///   适合渐变、装饰边框等形状背景画不出来、且文字长度不固定的气泡。
+/// - **固定尺寸**（[capInsets] 为空）：按 [size] 显示，未设置时用图片逻辑尺寸
+///   （像素 / `pixelRatio`）。图片自带箭头时用这种方式，不配置 `arrow`，
+///   改用 `NativeMarkerAnchorType.custom` 锚点指向箭头尖端。
+///
+/// 纯色加描边的气泡请用 [NativeMarkerShapeBackground]：主体与箭头是同一条路径，
+/// 不需要加载资源。
+///
+/// ```dart
+/// NativeMarkerImageBackground(
+///   imageId: 'bubble', // 图片 96x72 像素、pixelRatio 2，即逻辑 48x36
+///   capInsets: EdgeInsets.all(10), // 左右 10+10 < 48，上下 10+10 < 36
+/// )
+/// ```
 @immutable
 final class NativeMarkerImageBackground extends NativeMarkerBackground {
   const NativeMarkerImageBackground({
@@ -91,10 +109,19 @@ final class NativeMarkerImageBackground extends NativeMarkerBackground {
   /// 引用的 [MarkerImageResource.id]
   final String imageId;
 
-  /// 固定显示尺寸（逻辑像素）
+  /// 固定显示尺寸（逻辑像素），仅在 [capInsets] 为空时生效；图片按此尺寸整体缩放。
+  /// 资源加载失败降级时也保持这个尺寸，布局不跳动。
   final Size? size;
 
-  /// 九宫格边距（逻辑像素）
+  /// 九宫格边距（逻辑像素），即四角不拉伸区域的大小。
+  ///
+  /// - 原生端乘以资源的 `pixelRatio` 换算成图片像素。
+  /// - 必须满足 `left + right < 图片逻辑宽`、`top + bottom < 图片逻辑高`。
+  ///   图片尺寸要等资源加载完成才知道，所以 Dart 端只检查非负；超限时该点按默认
+  ///   白色背景显示，并通过 `AMapWidget.onNativeMarkerError` 报一次
+  ///   `NativeMarkerErrorCode.invalidConfig`，修改配置或替换资源后重新判断。
+  /// - 不要把箭头画进图片底边中间，它会随中间区域被拉宽；用 [NativeMarkerArrow]
+  ///   单独绘制。
   final EdgeInsets? capInsets;
 
   @override
@@ -113,14 +140,24 @@ final class NativeMarkerImageBackground extends NativeMarkerBackground {
       'size: $size, capInsets: $capInsets}';
 }
 
-/// 底部居中的箭头。[color] 为空时沿用形状背景的填充色；图片背景下必须显式指定。
+/// 主体底部居中的箭头，不参与九宫格拉伸。
+///
+/// - 形状背景：箭头与主体是同一条闭合路径，一次填充、描边和投影，没有接缝。
+///   [color] 只能为空（沿用 `fillColor`）或等于 `fillColor`，否则校验报错。
+/// - 图片背景：箭头单独画成三角形，[color] 必须显式指定。要与图片接成一体，
+///   图片底边颜色需与 [color] 一致；图片带描边或渐变底边时，箭头处会断开。
 @immutable
 final class NativeMarkerArrow {
   const NativeMarkerArrow(
       {required this.width, required this.height, this.color});
 
+  /// 底边宽度（逻辑像素）
   final double width;
+
+  /// 高度（逻辑像素），尖端到主体底边的距离
   final double height;
+
+  /// 箭头颜色，规则见类说明
   final Color? color;
 
   @override
