@@ -9,7 +9,7 @@ import java.util.Map;
  * 交给后台线程的不可变绘制输入（§8.2）：规格、密度、role 与资源快照。
  * 不含位置等非渲染属性（R-GEN-4）。资源由 RUNNING 引用保护，绘制期间不会被回收（R-DISP-1）。
  */
-public final class PaintJob implements ImageResolver {
+public final class PaintJob implements ImageResolver, Cancelable {
     public final String key;
     public final NativeMarkerSpec spec;
     public final boolean selected;
@@ -52,6 +52,7 @@ public final class PaintJob implements ImageResolver {
     }
 
     /** 销毁时置位，Painter 在步骤之间检查（R-DISP-4） */
+    @Override
     public boolean isCancelled() {
         return cancelled;
     }

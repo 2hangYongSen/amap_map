@@ -15,6 +15,7 @@ import 'package:amap_map_example/pages/overlays/marker_config.dart';
 import 'package:amap_map_example/pages/overlays/marker_add_with_map.dart';
 import 'package:amap_map_example/pages/overlays/marker_add_after_map.dart';
 import 'package:amap_map_example/pages/overlays/marker_custom_icon.dart';
+import 'package:amap_map_example/pages/overlays/native_marker_shape.dart';
 import 'package:amap_map_example/pages/overlays/custom_info_window.dart';
 import 'package:amap_map_example/pages/overlays/place_polygon.dart';
 import 'package:amap_map_example/pages/overlays/place_polyline.dart';
@@ -255,6 +256,18 @@ List<Demo> allDemos() => <Demo>[
             DemoConfiguration(
                 buildRoute: (BuildContext context) =>
                     const MarkerCustomIconPage())
+          ]),
+      Demo(
+          title: 'AM-E50.5: 原生点位形状',
+          category: DemoCategory.basic,
+          group: '点标记与信息窗口',
+          subtitle: '价格气泡、片区圆、阴影、长文案省略',
+          steps: '检查气泡与箭头之间没有缝隙，阴影随开关变化，长文案以省略号结尾；改文案后箭头尖端仍在原坐标；加 200 个后逐步出现且地图不卡顿。',
+          slug: 'native-marker-shape',
+          configurations: <DemoConfiguration>[
+            DemoConfiguration(
+                buildRoute: (BuildContext context) =>
+                    const NativeMarkerShapePage())
           ]),
       Demo(
           title: 'AM-E50.4: 自定义 InfoWindow',

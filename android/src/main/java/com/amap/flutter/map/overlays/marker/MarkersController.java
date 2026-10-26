@@ -1,5 +1,6 @@
 package com.amap.flutter.map.overlays.marker;
 
+import android.content.Context;
 import android.text.TextUtils;
 
 import androidx.annotation.NonNull;
@@ -17,7 +18,15 @@ import com.amap.flutter.map.overlays.marker.nativemarker.FullMarkerOptions;
 import com.amap.flutter.map.overlays.marker.nativemarker.MarkerEventSink;
 import com.amap.flutter.map.overlays.marker.nativemarker.MarkerHost;
 import com.amap.flutter.map.overlays.marker.nativemarker.NativeIcon;
+import com.amap.flutter.map.overlays.marker.nativemarker.InvalidMarkerException;
 import com.amap.flutter.map.overlays.marker.nativemarker.NativeMarkerManager;
+import com.amap.flutter.map.overlays.marker.nativemarker.Norm;
+import com.amap.flutter.map.overlays.marker.nativemarker.RenderDeps;
+import com.amap.flutter.map.overlays.marker.nativemarker.platform.AndroidFrameClock;
+import com.amap.flutter.map.overlays.marker.nativemarker.platform.AndroidIconFactory;
+import com.amap.flutter.map.overlays.marker.nativemarker.platform.AndroidImageDecoder;
+import com.amap.flutter.map.overlays.marker.nativemarker.platform.AndroidTaskRunner;
+import com.amap.flutter.map.overlays.marker.nativemarker.platform.NativeMarkerPainter;
 import com.amap.flutter.map.utils.Const;
 import com.amap.flutter.map.utils.ConvertUtil;
 import com.amap.flutter.map.utils.LogUtil;
@@ -26,6 +35,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
+import io.flutter.FlutterInjector;
 import io.flutter.plugin.common.MethodCall;
 import io.flutter.plugin.common.MethodChannel;
 
@@ -48,12 +58,19 @@ public class MarkersController
     private final NativeMarkerManager nativeManager;
     private boolean disposed = false;
 
+    /** 协议桩模式（无渲染依赖）：native 点位显示占位图标，仅供测试与兜底 */
     public MarkersController(MethodChannel methodChannel, AMap amap) {
+        this(methodChannel, amap, null);
+    }
+
+    /** 完整渲染模式：context 用于读取 asset 与屏幕密度 */
+    public MarkersController(MethodChannel methodChannel, AMap amap, Context context) {
         super(methodChannel, amap);
         amap.addOnMarkerClickListener(this);
         amap.addOnMarkerDragListener(this);
         amap.addOnMapClickListener(this);
         amap.addOnPOIClickListener(this);
+        RenderDeps deps = context == null ? null : renderDeps(context);
         nativeManager = new NativeMarkerManager(new SdkMarkerHost(), new MarkerEventSink() {
             @Override
             public void emit(String method, Map<String, Object> args) {
@@ -61,7 +78,38 @@ public class MarkersController
                     MarkersController.this.methodChannel.invokeMethod(method, args);
                 }
             }
-        });
+        }, deps);
+    }
+
+    /** 装配 Android 平台出口（解码、线程、绘制、SDK 图标、帧回调） */
+    private static RenderDeps renderDeps(Context context) {
+        int densityUnits;
+        try {
+            densityUnits = Norm.ratioUnits(context.getResources().getDisplayMetrics().density);
+        } catch (InvalidMarkerException e) {
+            throw new IllegalStateException(e); // 屏幕密度不可能非有限
+        }
+        RenderDeps deps = new RenderDeps(
+                new AndroidImageDecoder(context.getAssets(),
+                        new AndroidImageDecoder.AssetResolver() {
+                            @Override
+                            public String lookup(String asset, String assetPackage) {
+                                return assetPackage == null
+                                        ? FlutterInjector.instance().flutterLoader()
+                                                .getLookupKeyForAsset(asset)
+                                        : FlutterInjector.instance().flutterLoader()
+                                                .getLookupKeyForAsset(asset, assetPackage);
+                            }
+                        }),
+                new AndroidTaskRunner(), new NativeMarkerPainter(), new AndroidIconFactory(),
+                new AndroidFrameClock(), densityUnits);
+        deps.log = new RenderDeps.DiagLog() {
+            @Override
+            public void d(String message) {
+                LogUtil.d(CLASS_NAME, message);
+            }
+        };
+        return deps;
     }
 
     /** 创建参数为新协议时登记初始点位（R-SYNC-4），由 AMapOptionsBuilder 调用 */
