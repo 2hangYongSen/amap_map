@@ -27,6 +27,7 @@ import 'package:amap_map_example/pages/interactive/move_camera_demo.dart';
 import 'package:amap_map_example/pages/interactive/poi_click_demo.dart';
 import 'package:amap_map_example/pages/interactive/snapshot_demo.dart';
 import 'package:amap_map_example/pages/interactive/marker_benchmark_page.dart';
+import 'package:amap_map_example/pages/interactive/house_map_page.dart';
 
 enum DemoCategory {
   basic,
@@ -297,6 +298,22 @@ List<Demo> allDemos() => <Demo>[
             DemoConfiguration(
                 buildRoute: (BuildContext context) =>
                     const NativeMarkerSelectionPage())
+          ]),
+      Demo(
+          title: 'AM-E50.8: 地图找房',
+          category: DemoCategory.extension,
+          group: '点标记与信息窗口',
+          subtitle: '小程序同款价格气泡、选中聚焦、三档房源抽屉',
+          steps: '1. 检查白底黑字圆角价格气泡和底部箭头，“价格待定”正常显示。\n'
+              '2. 点击气泡：紫底白字并置顶，抽屉打开到半屏，气泡聚焦到上方可见地图中央，缩放保持不变。\n'
+              '3. 切换其他气泡，抽屉内容和选中态同步切换；快速切换后只聚焦最后一个。\n'
+              '4. 上拖抽屉到全屏并滚动房型列表，下拖回半屏或隐藏；拖动期间地图不跟随移动。\n'
+              '5. 再点选中气泡、点地图空白、点关闭或下拖隐藏，均取消选择并收起抽屉，地图不复位。\n'
+              '本页使用固定示例房源，不调用业务接口。',
+          slug: 'house-map',
+          configurations: <DemoConfiguration>[
+            DemoConfiguration(
+                buildRoute: (BuildContext context) => const HouseMapPage())
           ]),
       Demo(
           title: 'AM-E50.4: 自定义 InfoWindow',
