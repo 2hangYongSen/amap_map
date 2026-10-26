@@ -352,12 +352,13 @@
  */
 - (void)mapView:(MAMapView *)mapView didAddAnnotationViews:(NSArray *)views {
     for (MAAnnotationView *view in views) {
-        if ([view.annotation isKindOfClass:[MAAnnotationView class]] == NO) {
-            return;
+        //F-2: 判断 annotation 类型（原来误写为 View 类型），不满足时跳过当前 View 而不是整体返回
+        if ([view.annotation isKindOfClass:[MAPointAnnotation class]] == NO) {
+            continue;
         }
         MAPointAnnotation *fAnno = view.annotation;
         if (fAnno.markerId == nil) {
-            return;
+            continue;
         }
         AMapMarker *marker = [_markerController markerForId:fAnno.markerId];
         [view updateViewWithMarker:marker];
