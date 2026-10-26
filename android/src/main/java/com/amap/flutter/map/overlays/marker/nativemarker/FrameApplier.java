@@ -38,7 +38,7 @@ final class FrameApplier {
         if (disposed) {
             return;
         }
-        (item.selected ? selectedQ : item.isAdd ? addQ : changeQ).add(item);
+        (item.urgent ? selectedQ : item.isAdd ? addQ : changeQ).add(item);
         if (!posted) {
             posted = true;
             clock.postFrame(frame);

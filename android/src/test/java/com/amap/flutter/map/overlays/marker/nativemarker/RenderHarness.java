@@ -68,6 +68,51 @@ final class RenderHarness {
         return manager.update(u);
     }
 
+    /** 开启自动选择（markerSelection 默认值）并握手 */
+    void enableSelection() {
+        Map<String, Object> sel = new java.util.HashMap<>();
+        sel.put("deselectOnMapTap", true);
+        sel.put("deselectOnRetap", true);
+        Map<String, Object> o = new java.util.HashMap<>();
+        o.put("markerSelection", sel);
+        manager.applyOptions(o);
+        manager.attach();
+    }
+
+    /** 开启 replaceWhenReady 并握手 */
+    void enableReplace(long timeoutMs) {
+        Map<String, Object> t = new java.util.HashMap<>();
+        t.put("mode", "replaceWhenReady");
+        t.put("timeoutMs", timeoutMs);
+        Map<String, Object> o = new java.util.HashMap<>();
+        o.put("markerTransition", t);
+        manager.applyOptions(o);
+        manager.attach();
+    }
+
+    /** setSelected 返回的 revision */
+    int select(String id) {
+        Map<String, Object> a = new java.util.HashMap<>();
+        a.put("markerId", id);
+        return (Integer) manager.setSelected(a).get("revision");
+    }
+
+    /** 已发出的某类事件参数 */
+    List<Map<String, Object>> events(String method) {
+        List<Map<String, Object>> out = new ArrayList<>();
+        for (int i = 0; i < emitted.size(); i++) {
+            if (method.equals(emitted.get(i))) {
+                out.add(emittedArgs.get(i));
+            }
+        }
+        return out;
+    }
+
+    /** 当前任务数 */
+    int taskCount() {
+        return r().scheduler.tasks().size();
+    }
+
     /** 某点当前地图上的位置 */
     double lat(String id) {
         return host.markers.get(id).options.latitude;

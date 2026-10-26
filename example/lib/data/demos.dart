@@ -16,6 +16,7 @@ import 'package:amap_map_example/pages/overlays/marker_add_with_map.dart';
 import 'package:amap_map_example/pages/overlays/marker_add_after_map.dart';
 import 'package:amap_map_example/pages/overlays/marker_custom_icon.dart';
 import 'package:amap_map_example/pages/overlays/native_marker_image.dart';
+import 'package:amap_map_example/pages/overlays/native_marker_selection.dart';
 import 'package:amap_map_example/pages/overlays/native_marker_shape.dart';
 import 'package:amap_map_example/pages/overlays/custom_info_window.dart';
 import 'package:amap_map_example/pages/overlays/place_polygon.dart';
@@ -283,6 +284,19 @@ List<Demo> allDemos() => <Demo>[
             DemoConfiguration(
                 buildRoute: (BuildContext context) =>
                     const NativeMarkerImagePage())
+          ]),
+      Demo(
+          title: 'AM-E50.7: 原生点位选择',
+          category: DemoCategory.basic,
+          group: '点标记与信息窗口',
+          subtitle: '点击选中、重复点击取消、选中置顶、图层就绪后替换',
+          steps:
+              '点 p1 变红底白字并压在 p3 上方，再点一次恢复；点片区圆只显示 onTap、选择不变；点地图空白处取消选择；“切到片区层”时旧层在新层出现前不消失。',
+          slug: 'native-marker-selection',
+          configurations: <DemoConfiguration>[
+            DemoConfiguration(
+                buildRoute: (BuildContext context) =>
+                    const NativeMarkerSelectionPage())
           ]),
       Demo(
           title: 'AM-E50.4: 自定义 InfoWindow',

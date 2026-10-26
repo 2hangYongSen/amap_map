@@ -127,10 +127,13 @@ class MarkerController implements MarkerOptionsSink {
      * native 点位：属性按完整替换应用，锚点不读 options（来自合成画布）。
      * icon 为 null 时只改属性、保留当前图标与锚点（R-GEN-5）。
      */
-    void applyNative(FullMarkerOptions o, BitmapDescriptor icon, float u, float v) {
+    void applyNative(FullMarkerOptions o, BitmapDescriptor icon, float u, float v,
+                     boolean selected) {
         float oldU = marker.getAnchorU();
         float oldV = marker.getAnchorV();
         applyFull(o, icon);
+        // 选中置顶用 setZIndex，不用 setToTop（E-A3）
+        marker.setZIndex(o.zIndexFor(selected));
         if (icon != null) {
             marker.setAnchor(u, v);
         } else {

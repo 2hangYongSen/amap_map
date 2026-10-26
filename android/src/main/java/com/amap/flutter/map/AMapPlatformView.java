@@ -17,6 +17,7 @@ import com.amap.flutter.map.core.MapsInitializerController;
 import com.amap.flutter.map.overlays.marker.MarkersController;
 import com.amap.flutter.map.overlays.polygon.PolygonsController;
 import com.amap.flutter.map.overlays.polyline.PolylinesController;
+import com.amap.flutter.map.utils.Const;
 import com.amap.flutter.map.utils.LogUtil;
 
 import java.util.HashMap;
@@ -138,6 +139,11 @@ public class AMapPlatformView
     public void onMethodCall(@NonNull MethodCall call, @NonNull MethodChannel.Result result) {
         LogUtil.i(CLASS_NAME, "onMethodCall==>" + call.method + ", arguments==> " + call.arguments);
         String methodId = call.method;
+        // map#update.options 中的点位选项（选择、过渡）交给点位控制器，其余照旧
+        if (Const.METHOD_MAP_UPDATE.equals(methodId) && markersController != null
+                && call.argument("options") instanceof Map) {
+            markersController.applyMapOptions((Map<?, ?>) call.argument("options"));
+        }
         if (myMethodCallHandlerMap.containsKey(methodId)) {
             Objects.requireNonNull(myMethodCallHandlerMap.get(methodId)).doMethodCall(call, result);
         } else {

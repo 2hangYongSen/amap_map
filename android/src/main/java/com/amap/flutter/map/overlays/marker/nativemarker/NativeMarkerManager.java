@@ -20,6 +20,8 @@ public final class NativeMarkerManager {
     private final MarkerHost host;
     private final PointTable points = new PointTable();
     private final NativeEventLog events;
+    /** 原有事件（marker#onTap）直接发送，不受新协议开关影响 */
+    private final MarkerEventSink sink;
     /** 完整渲染模式；为 null 时保持 S5 协议桩（native 点显示占位图标） */
     private final NativeRenderer renderer;
     private boolean v2 = false;
@@ -34,8 +36,31 @@ public final class NativeMarkerManager {
 
     public NativeMarkerManager(MarkerHost host, MarkerEventSink sink, RenderDeps deps) {
         this.host = host;
+        this.sink = sink;
         this.events = new NativeEventLog(sink);
-        this.renderer = deps == null ? null : new NativeRenderer(points, host, events, deps);
+        this.renderer = deps == null ? null
+                : new NativeRenderer(points, host, events, deps, selection);
+        this.transition = new ReplaceTransition(new TransitionOps(),
+                deps == null ? null : deps.runner);
+        if (renderer != null) {
+            renderer.setTransition(transition);
+        }
+    }
+
+    /** 原生单选（§11） */
+    private final SelectionState selection = new SelectionState();
+    /** 集合替换过渡（§12） */
+    private final ReplaceTransition transition;
+    /** icon 模式点位中 selectable 的 id（native 点读期望快照） */
+    private final Set<String> selectableIcons = new HashSet<>();
+
+    public SelectionState selection() {
+        return selection;
+    }
+
+    /** 测试与诊断：替换过渡 */
+    ReplaceTransition transition() {
+        return transition;
     }
 
     /** 测试与诊断：完整模式的内部组件，协议桩模式为 null */
@@ -70,11 +95,13 @@ public final class NativeMarkerManager {
             return;
         }
         v2 = true;
+        applyOptions(params); // 创建参数顶层带 markerSelection、markerTransition（§6.1）
         List<ImageSource> images = parseImagesOrNull(params, "imagesToAdd");
         if (images == null) {
             events.error(ERR_INVALID_CONFIG, null, null, "创建参数 imagesToAdd 结构错误");
         }
         registerImages(images); // 初始资源先于初始点位
+        transition.beginUpdate();
         Object list = params.get("markersToAdd");
         if (list instanceof List) {
             for (Object raw : (List<?>) list) {
@@ -84,6 +111,7 @@ public final class NativeMarkerManager {
                 }
             }
         }
+        transition.endUpdate(); // 初始没有删除，只清掉等待登记
         refreshDone();
     }
 
@@ -102,15 +130,12 @@ public final class NativeMarkerManager {
             images.put("failed", new ArrayList<>());
             images.put("pending", new ArrayList<>());
         }
-        Map<String, Object> selection = new HashMap<>();
-        selection.put("selectedId", null);
-        selection.put("revision", 0);
         Map<String, Object> r = new HashMap<>();
         r.put("protocolVersion", PROTOCOL_V2);
         r.put("syncId", lastSyncId);
         r.put("rejectedMarkerIds", new ArrayList<>(initialRejected));
         r.put("images", images);
-        r.put("selection", selection);
+        r.put("selection", selection.snapshot());
         r.put("lastEventSeq", events.lastEventSeq());
         r.put("errors", events.errorsSnapshot());
         r.put("errorsDropped", events.errorsDropped());
@@ -133,11 +158,12 @@ public final class NativeMarkerManager {
         List<String> rejected = new ArrayList<>();
         // 顺序：登记资源 → 删除 → 新增 → 修改 → 释放资源（§6.2）
         registerImages(images);
+        transition.beginUpdate();
         Object removes = m.get("markerIdsToRemove");
         if (removes instanceof List) {
             for (Object id : (List<?>) removes) {
                 if (id instanceof String) {
-                    removeOne((String) id);
+                    removeOrDefer((String) id, syncId);
                 }
             }
         }
@@ -146,6 +172,7 @@ public final class NativeMarkerManager {
         if (renderer != null) {
             renderer.releaseImages(releases);
         }
+        transition.endUpdate(); // 没有需要等待的新点即显式删除，立即执行（R-DEL-1）
         refreshDone();
         lastSyncId = syncId;
         return result(syncId, true, rejected);
@@ -177,7 +204,9 @@ public final class NativeMarkerManager {
             }
         }
         List<String> rejected = new ArrayList<>();
-        applyList(list, rejected);
+        applyList(list, rejected); // 快照中重新出现的待删除点在这里作废
+        // 其余待删除立即执行；Dart 在 resync 返回时清空过渡条目
+        transition.flush();
         if (renderer != null) {
             Set<String> keepImages = new HashSet<>();
             for (ImageSource s : images) {
@@ -200,6 +229,8 @@ public final class NativeMarkerManager {
         }
         disposed = true;
         events.close();
+        transition.dispose(); // 撤销超时计时；Marker 由下面统一移除
+        selectableIcons.clear();
         if (renderer != null) {
             renderer.dispose(); // 先按引用规则移除 native 点（§8.6）
         }
@@ -227,8 +258,41 @@ public final class NativeMarkerManager {
         }
     }
 
-    /** 应用单个完整对象；被拒绝时原生状态保持不变并返回 false（R-NAT-REJ-1） */
+    /** 应用单个对象，再处理过渡等待与 R-SEL-7；拒绝时状态不变 */
     private boolean applyOne(Object raw, String id) {
+        boolean wasSelectable = isSelectable(id);
+        if (!applyRaw(raw, id)) {
+            return false;
+        }
+        transition.revive(id); // 待删除的 id 重新出现：旧删除作废（R-DEL-4）
+        if (transition.enabled() && renderer != null && renderer.needsWait(id)) {
+            transition.waitFor(id);
+        }
+        // R-SEL-7：选中点由可选中改为不可选中才取消（API 选中的非 selectable 点不受影响）
+        if (id.equals(selection.selectedId()) && wasSelectable && !isSelectable(id)) {
+            commit(selection.set(null, SelectionState.INVALIDATED));
+        }
+        return true;
+    }
+
+    /** 点位当前是否可选中：native 读期望快照，icon 读登记表 */
+    private boolean isSelectable(String id) {
+        PointTable.Entry e = points.get(id);
+        return e != null ? e.desired != null && e.desired.selectable : selectableIcons.contains(id);
+    }
+
+    /** R-SEL-1：先发事件，再按新选择重新调度外观（事件不等外观） */
+    private void commit(SelectionState.Change c) {
+        if (c == null) {
+            return;
+        }
+        events.event("marker#selectionChanged", c.toMap());
+        if (renderer != null) {
+            renderer.selectionChanged(c.previousId, c.selectedId);
+        }
+    }
+
+    private boolean applyRaw(Object raw, String id) {
         FullMarkerOptions opt;
         Object icon = null;
         try {
@@ -241,6 +305,11 @@ public final class NativeMarkerManager {
             return false;
         }
         boolean exists = host.hasMarker(id);
+        if (!opt.isNative() && opt.selectable) {
+            selectableIcons.add(id);
+        } else {
+            selectableIcons.remove(id);
+        }
         if (renderer != null) {
             return applyFullMode(opt, icon, exists);
         }
@@ -286,13 +355,105 @@ public final class NativeMarkerManager {
         return true;
     }
 
+    /** immediate 删除；选中点被删除时选择保留、不发事件（R-SEL-6） */
     private void removeOne(String id) {
+        transition.revive(id);
+        selectableIcons.remove(id);
         if (renderer != null && points.get(id) != null) {
             renderer.removeNative(id); // 代次校验 + remove() 后归还引用（R-GEN-6）
             return;
         }
         points.remove(id);
         host.removeMarker(id);
+    }
+
+    /** replaceWhenReady：登记待删除(g)，Marker 保持可见、可点击（R-DEL-3） */
+    private void removeOrDefer(String id, int syncId) {
+        // 地图上还没有 Marker（新点仍在绘制）时没有可见内容需要保留，直接删除
+        if (!transition.enabled() || !host.hasMarker(id)) {
+            removeOne(id);
+            return;
+        }
+        Integer g = renderer != null && points.get(id) != null ? renderer.beginRemoval(id) : null;
+        transition.defer(id, g, syncId);
+    }
+
+    /** 替换过渡的 SDK 出口 */
+    private final class TransitionOps implements ReplaceTransition.Ops {
+        @Override
+        public boolean remove(String id, Integer g) {
+            if (g != null) {
+                return renderer.finishRemoval(id, g); // 代次不符即作废（R-GEN-6）
+            }
+            if (renderer != null && points.get(id) != null) {
+                return false; // 已作为 native 点重新加入
+            }
+            boolean had = host.hasMarker(id);
+            selectableIcons.remove(id);
+            points.remove(id);
+            host.removeMarker(id);
+            return had;
+        }
+
+        @Override
+        public boolean settled(String id) {
+            return renderer == null || renderer.settled(id);
+        }
+
+        @Override
+        public void emit(String method, Map<String, Object> args) {
+            events.event(method, args);
+        }
+    }
+
+    // ---------- 选择（§11）与选项 ----------
+
+    /** markers#setSelected：返回提交后的 revision；id 相同不发事件（R-SEL-4） */
+    public Map<String, Object> setSelected(Object args) {
+        Object id = args instanceof Map ? ((Map<?, ?>) args).get("markerId") : null;
+        v2 = true;
+        if (!disposed) {
+            commit(selection.set(id instanceof String ? (String) id : null, SelectionState.API));
+        }
+        Map<String, Object> r = new HashMap<>();
+        r.put("revision", selection.revision());
+        return r;
+    }
+
+    /**
+     * 点位点击（R-SEL-2/3）：先提交选择并发 selectionChanged，再发原有的 marker#onTap。
+     * onTap 与 1.0.15 相同，旧协议也照常发送；过渡中的待删除点同样可点（R-DEL-3）
+     */
+    public void onMarkerTap(String id) {
+        if (disposed) {
+            return;
+        }
+        if (v2) {
+            commit(selection.onMarkerTap(id, isSelectable(id)));
+        }
+        Map<String, Object> data = new HashMap<>(1);
+        data.put("markerId", id);
+        sink.emit("marker#onTap", data);
+    }
+
+    /** 地图空白处单击（R-SEL-2）；点击点位时 SDK 不会再回调这里（E-A4） */
+    public void onMapTap() {
+        if (v2 && !disposed) {
+            commit(selection.onMapTap());
+        }
+    }
+
+    /** map#update.options 与创建参数中的 markerSelection、markerTransition；键缺失不改 */
+    public void applyOptions(Map<?, ?> options) {
+        if (options == null || disposed) {
+            return;
+        }
+        if (options.containsKey("markerSelection")) {
+            selection.configure(options.get("markerSelection"));
+        }
+        if (options.containsKey("markerTransition")) {
+            transition.configure(options.get("markerTransition"));
+        }
     }
 
     private void registerImages(List<ImageSource> images) {

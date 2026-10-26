@@ -116,6 +116,11 @@ public final class FullMarkerOptions {
         return MODE_NATIVE.equals(renderMode);
     }
 
+    /** 选中置顶（§8.5、E-A3）：选中时 selectedZIndex ?? zIndex，否则 zIndex */
+    public float zIndexFor(boolean selected) {
+        return selected && selectedZIndex != null ? selectedZIndex : zIndex;
+    }
+
     private static float floatOr(Object o, float def) {
         return o == null ? def : ((Number) o).floatValue();
     }
