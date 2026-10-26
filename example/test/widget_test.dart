@@ -10,7 +10,7 @@ import 'package:flutter_test/flutter_test.dart';
 void main() {
   test('every demo has a unique route and test steps', () {
     final List<Demo> demos = allDemos();
-    expect(demos.length, 28);
+    expect(demos.length, 29);
     expect(demos.map((Demo demo) => demo.slug).toSet().length, demos.length);
     expect(demos.map((Demo demo) => demo.title.split(':').first).toSet().length,
         demos.length);

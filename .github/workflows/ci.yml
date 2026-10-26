@@ -48,6 +48,10 @@ jobs:
       - name: example 依赖（使用锁文件）
         working-directory: example
         run: flutter pub get --enforce-lockfile
+      # gradlew 被 .gitignore 忽略，由 Flutter 生成 wrapper 与 local.properties（不打包）
+      - name: 生成 Gradle 配置
+        working-directory: example
+        run: flutter build apk --config-only
       - name: JUnit
         working-directory: example/android
         run: ./gradlew :amap_map:testDebugUnitTest
