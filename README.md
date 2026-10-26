@@ -144,7 +144,7 @@ class _MapPageState extends State<MapPage> {
 
 给 `Marker` 设置 `nativePresentation` 后，点位由原生端按样式绘制，不再需要 Flutter 先把每个点画成 PNG；旧的 `icon` 用法不受影响。
 
-> **开发中**：Android 已完成形状、图片背景、图标与降级恢复；原生选择（`selectable`、`markerSelection`）尚在实现；iOS 尚未支持。
+> **开发中**：Android 已完成形状、图片背景、图标、降级恢复、原生选择与集合替换过渡；iOS 尚未支持。
 
 #### 基本用法
 
@@ -224,6 +224,34 @@ NativeMarkerStyle(
 - **只拉伸不平铺**：中间区域的图案会被拉变形，装饰应放在四角。
 - **箭头**：不要画进图片底边中间，否则会被拉宽。用 `NativeMarkerArrow` 单独绘制，并显式指定 `color`；图片底边颜色需与 `arrow.color` 一致，才能和主体接成一体。
 
+#### 原生选择
+
+给点位设置 `selectable: true` 和 `selectedStyle`，再给地图配置 `markerSelection`，点击即可在原生端切换选中外观，不需要 Dart 回传重建：
+
+```dart
+AMapWidget(
+  markers: markers, // 点位：selectable: true，可选 selectedZIndex 让选中点置顶
+  markerSelection: const MarkerSelectionOptions(), // 点地图空白处、重复点击都会取消
+  onMarkerSelectionChanged: (MarkerSelectionChange c) =>
+      setState(() => _selectedId = c.selectedId), // 只写回业务状态
+)
+```
+
+- 点击时先回调 `onMarkerSelectionChanged`，再回调 `Marker.onTap`；非 `selectable` 的点只回调 `onTap`，选择不变。
+- 代码中切换用 `controller.setSelectedMarker(id)`；传入当前已选中的 id 不产生任何效果，在回调里回写不会循环。
+- 选中点被删除后选择保留，重新加入时自动恢复高亮；改为 `selectable: false` 时取消选择，原因为 `invalidated`。
+
+#### 集合替换过渡
+
+整批切换图层时，默认（`MarkerTransition.immediate()`）旧点立即删除、新点逐帧出现，中间可能短暂缺点。改用 `replaceWhenReady` 后，旧点保持可见、可点击，直到新点全部显示或超时：
+
+```dart
+markerTransition: const MarkerTransition.replaceWhenReady(
+    timeout: Duration(milliseconds: 1000)), // Android 建议值
+```
+
+只删除、不新增的更新（例如清空筛选）仍立即删除。
+
 #### 字重（Android）
 
 `fontWeight` 只允许 w400 / w500 / w600 / w700。Android API 28 及以上按精确字重绘制；低于 API 28 时系统字体只有常规和粗体两档：w400、w500 显示为常规，w600、w700 显示为粗体。
@@ -245,6 +273,10 @@ NativeMarkerStyle(
     ...
 </application>
 ```
+
+**Android 点击点位后约 0.3 秒才切换选中外观**
+
+这是高德 SDK 的点击识别延迟：手指抬起后约 290ms 才回调点击（华为 BRE-AL80 实测，关闭缩放手势也一样），插件从收到点击到换图只需几毫秒，选中图已提前绘制好。所有基于 SDK 点击回调的点位都有这段延迟，插件目前没有绕开。
 
 **模拟器在 `com.amap.api.col.3sl.dl$b.createContext(GlesUtility.java:73)` 闪退**
 
