@@ -19,26 +19,29 @@ public final class ShapeRenderer {
     private ShapeRenderer() {
     }
 
+    /** 纯形状点位（无图片、无图标），测试用 */
     public static void render(NativeMarkerSpec spec, NativeMarkerLayout layout, boolean selected,
                               TextMeasurer m, DrawSurface s, Cancelable c) {
+        render(spec, layout, selected, m, null, s, c);
+    }
+
+    /** images 提供解码结果；图片背景（非降级）或显示图标时必须非空 */
+    public static void render(NativeMarkerSpec spec, NativeMarkerLayout layout, boolean selected,
+                              TextMeasurer m, ImageSet images, DrawSurface s, Cancelable c) {
         layout.requireWithinLimit(); // D-8
         StateLayout st = layout.state(selected);
         NormStyle style = selected ? spec.selectedOrNormal() : spec.normal;
-        if (style.isImage() && !st.fallbackBackground) {
-            throw new IllegalStateException("图片背景绘制在 S11 实现");
-        }
-        if (st.showIcon) {
-            throw new IllegalStateException("图标绘制在 S11 实现");
-        }
         // 状态内锚点对齐到画布原点：状态局部坐标 + (-anchor)（R-GEO-1）
         double ox = -st.anchorX;
         double oy = -st.anchorY;
         s.setOrigin(layout.px, layout.py);
-        drawBackground(style, st, ox, oy, layout.density, s, c);
-        check(c);
-        if (!st.displayText.isEmpty()) {
-            drawText(style, st, ox, oy, m, s);
+        if (style.isImage() && !st.fallbackBackground) {
+            ImageDrawing.background(style, st, ox, oy, layout.density, images, s, c);
+        } else {
+            drawBackground(style, st, ox, oy, layout.density, s, c);
         }
+        check(c);
+        drawContent(spec, style, st, ox, oy, m, images, s);
     }
 
     private static void drawBackground(NormStyle style, StateLayout st, double ox, double oy,
@@ -78,27 +81,51 @@ public final class ShapeRenderer {
         }
     }
 
-    /** 文字在内容区垂直居中，水平按 textAlign 对齐；宽度用与布局相同的测量器（R-NORM-4） */
-    private static void drawText(NormStyle style, StateLayout st, double ox, double oy,
-                                 TextMeasurer m, DrawSurface s) {
+    /**
+     * 内容 = 图标 + 间距 + 文字，整体在内容区内按 textAlign 水平对齐、垂直居中；
+     * 文字宽度用与布局相同的测量器（R-NORM-4）。
+     */
+    private static void drawContent(NativeMarkerSpec spec, NormStyle style, StateLayout st,
+                                    double ox, double oy, TextMeasurer m, ImageSet images,
+                                    DrawSurface s) {
+        boolean hasText = !st.displayText.isEmpty();
+        if (!hasText && !st.showIcon) {
+            return;
+        }
         double padL = Norm.length(style.padding[0]);
         double padT = Norm.length(style.padding[1]);
         double padR = Norm.length(style.padding[2]);
         double padB = Norm.length(style.padding[3]);
         double font = Norm.length(style.fontSize);
         double avail = st.body.width() - padL - padR;
-        double tw = m.width(st.displayText, font, style.fontWeight);
+        double tw = hasText ? m.width(st.displayText, font, style.fontWeight) : 0;
+        double iconW = st.showIcon ? st.iconWidth : 0;
+        double gap = st.showIcon && hasText ? Norm.length(spec.iconSpacing) : 0;
+        double cw = iconW + gap + tw;
         double x = st.body.left + ox + padL;
         if ("center".equals(style.textAlign)) {
-            x += (avail - tw) / 2;
+            x += (avail - cw) / 2;
         } else if ("right".equals(style.textAlign)) {
-            x += avail - tw;
+            x += avail - cw;
         }
         double centerY = st.body.top + oy + padT + (st.body.height() - padT - padB) / 2;
-        s.text(st.displayText, x, centerY, font, style.fontWeight, style.textColor);
+        if (st.showIcon) {
+            // 图标固定在文字前方，与文字共用垂直中线
+            DecodedImage icon = images == null ? null : images.image(spec.iconId);
+            if (icon == null) {
+                throw new IllegalStateException("图标资源不可用: " + spec.iconId);
+            }
+            double top = centerY - st.iconHeight / 2;
+            s.image(icon, NinePatch.whole(icon.width(), icon.height(),
+                    new RectD(x, top, x + iconW, top + st.iconHeight)));
+        }
+        if (hasText) {
+            s.text(st.displayText, x + iconW + gap, centerY, font, style.fontWeight,
+                    style.textColor);
+        }
     }
 
-    private static void check(Cancelable c) {
+    static void check(Cancelable c) {
         if (c != null && c.isCancelled()) {
             throw new CancellationException("绘制已取消");
         }

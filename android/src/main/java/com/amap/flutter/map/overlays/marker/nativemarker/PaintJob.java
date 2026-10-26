@@ -9,7 +9,7 @@ import java.util.Map;
  * 交给后台线程的不可变绘制输入（§8.2）：规格、密度、role 与资源快照。
  * 不含位置等非渲染属性（R-GEN-4）。资源由 RUNNING 引用保护，绘制期间不会被回收（R-DISP-1）。
  */
-public final class PaintJob implements ImageResolver, Cancelable {
+public final class PaintJob implements ImageSet, Cancelable {
     public final String key;
     public final NativeMarkerSpec spec;
     public final boolean selected;
@@ -17,6 +17,7 @@ public final class PaintJob implements ImageResolver, Cancelable {
     /** 可用资源的解码结果；不在表中的按 fallback 绘制 */
     private final Map<String, DecodedImage> images;
     private final Map<String, double[]> sizes;
+    private final Map<String, Double> ratios;
     private volatile boolean cancelled = false;
 
     /** readyIds：key 中解析为 ready 的资源，开始前已确认全部解码完成 */
@@ -28,17 +29,28 @@ public final class PaintJob implements ImageResolver, Cancelable {
         this.densityUnits = densityUnits;
         Map<String, DecodedImage> imgs = new HashMap<>();
         Map<String, double[]> sz = new HashMap<>();
-        // 在主线程拍快照，后台只读这两张不可变表；只放 key 认定为 ready 的资源
+        Map<String, Double> pr = new HashMap<>();
+        // 在主线程拍快照，后台只读这几张不可变表；只放 key 认定为 ready 的资源
         for (String id : readyIds) {
-            imgs.put(id, registry.entry(id).decoded());
+            ImageEntry e = registry.entry(id);
+            imgs.put(id, e.decoded());
             sz.put(id, registry.logicalSize(id));
+            pr.put(id, e.source.pixelRatio);
         }
         this.images = Collections.unmodifiableMap(imgs);
         this.sizes = Collections.unmodifiableMap(sz);
+        this.ratios = Collections.unmodifiableMap(pr);
     }
 
+    @Override
     public DecodedImage image(String id) {
         return images.get(id);
+    }
+
+    @Override
+    public double pixelRatio(String id) {
+        Double r = ratios.get(id);
+        return r == null ? 1 : r;
     }
 
     @Override

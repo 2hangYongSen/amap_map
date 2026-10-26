@@ -103,7 +103,31 @@ final class NativeRenderer implements ImageRegistry.Listener, RenderPipeline.Lis
             }
         }
         computeKeys(e);
+        reportCapOverflow(e);
         reconcileRoles(e);
+    }
+
+    /**
+     * R-NAT-REJ-2：九宫格 capInsets 要等资源 ready 才能判断。超限时保留期望快照、按默认背景显示，
+     * 同一 normalKey 只报一次 invalidConfig；只有快照或资源解析结果变化（key 变化）才重新判断。
+     */
+    private void reportCapOverflow(PointTable.Entry e) {
+        NativeMarkerSpec spec = e.desired.spec;
+        boolean overflow = spec.normal.capOverflow(registry)
+                || (spec.selected != null && spec.selected.capOverflow(registry));
+        if (!overflow || e.normalKey.equals(e.capErrorKey)) {
+            return;
+        }
+        e.capErrorKey = e.normalKey;
+        events.error(NativeMarkerManager.ERR_INVALID_CONFIG, e.id, null,
+                "capInsets 超出图片逻辑尺寸（R-VAL-5），按默认背景显示");
+    }
+
+    /** D-5：背景图失败、图标未配置或失败、且没有文字时不显示该点 */
+    private boolean shouldHide(NativeMarkerSpec spec) {
+        boolean bgFailed = spec.normal.isImage() && !registry.usable(spec.normal.imageId);
+        boolean iconGone = spec.iconId == null || !registry.usable(spec.iconId);
+        return bgFailed && iconGone && spec.text == null;
     }
 
     /**
@@ -174,6 +198,12 @@ final class NativeRenderer implements ImageRegistry.Listener, RenderPipeline.Lis
 
     /** 两个 role 各自判断是否还需要接收路径（R-GEN-2、R-GEN-5、R-PRI-1） */
     private void reconcileRoles(PointTable.Entry e) {
+        e.hidden = shouldHide(e.desired.spec);
+        if (e.hidden) {
+            // 撤销接收路径并从地图移除；remove() 返回后才归还显示引用（R-CACHE-1）
+            pipeline.removeMarker(e);
+            return;
+        }
         boolean needNormal = (e.shown == null || !e.shown.key.equals(e.normalKey))
                 && !e.normalKey.equals(e.failedKey[0]);
         pipeline.reconcile(e, false, needNormal, RenderTask.P1);
@@ -182,7 +212,7 @@ final class NativeRenderer implements ImageRegistry.Listener, RenderPipeline.Lis
 
     /** 选中态预热：只针对 selectable 且选中态尚未就绪的点（§8.3 P2） */
     private boolean needsPrewarm(PointTable.Entry e) {
-        return e.selectedKey != null && !e.isRemoving() && !cache.contains(e.selectedKey)
+        return e.selectedKey != null && !e.isRemoving() && !e.hidden && !cache.contains(e.selectedKey)
                 && !e.selectedKey.equals(e.failedKey[1]);
     }
 
@@ -240,6 +270,8 @@ final class NativeRenderer implements ImageRegistry.Listener, RenderPipeline.Lis
             String n = p.normalKey;
             String s = p.selectedKey;
             computeKeys(p);
+            // pending → ready 时 key 不变，但尺寸刚知道，九宫格超限要在这里判断
+            reportCapOverflow(p);
             if (!n.equals(p.normalKey) || (s != null && !s.equals(p.selectedKey))) {
                 points.touch(id);
                 reconcileRoles(p);

@@ -73,6 +73,29 @@ final class Payloads {
         return m;
     }
 
+    /** 九宫格背景点位：不设 size，宽高按圆角矩形规则计算；cap 为 [l,t,r,b] 逻辑像素 */
+    @SuppressWarnings("unchecked")
+    static Map<String, Object> ninePatch(String id, String text, String imageId, double... cap) {
+        Map<String, Object> m = withImage(id, text, imageId);
+        Map<String, Object> st = (Map<String, Object>) ((Map<String, Object>)
+                m.get("nativePresentation")).get("style");
+        Map<String, Object> bg = (Map<String, Object>) st.get("background");
+        bg.remove("size");
+        bg.put("capInsets", Arrays.asList(cap[0], cap[1], cap[2], cap[3]));
+        st.put("padding", Arrays.asList(8.0, 4.0, 8.0, 4.0));
+        return m;
+    }
+
+    /** imagesToAdd 的一项（asset，可重试） */
+    static Map<String, Object> assetImage(String id) {
+        Map<String, Object> m = new HashMap<>();
+        m.put("id", id);
+        m.put("type", "asset");
+        m.put("asset", "assets/" + id + ".png");
+        m.put("pixelRatio", 2.0);
+        return m;
+    }
+
     /** imagesToAdd 的一项（bytes） */
     static Map<String, Object> bytesImage(String id) {
         Map<String, Object> m = new HashMap<>();

@@ -109,6 +109,18 @@ public final class NormStyle {
         return bgType == BG_IMAGE;
     }
 
+    /**
+     * R-VAL-5 的原生异步部分：资源 ready（尺寸已知）后 capInsets 超出图片逻辑尺寸。
+     * 尺寸未知（pending）时无法判断，返回 false；布局与 R-NAT-REJ-2 报错共用这一判断。
+     */
+    public boolean capOverflow(ImageResolver r) {
+        if (!isImage() || capInsets == null || !r.usable(imageId)) {
+            return false;
+        }
+        double[] size = r.logicalSize(imageId);
+        return size != null && !NinePatch.fits(capInsets, size[0], size[1]);
+    }
+
     /** R-VAL-2/3/4/8 的原生防御性校验，全部对规范化后的整数执行 */
     private void validate() throws InvalidMarkerException {
         SpecReader.require(fontSize > 0, "fontSize 规范化后必须大于 0");

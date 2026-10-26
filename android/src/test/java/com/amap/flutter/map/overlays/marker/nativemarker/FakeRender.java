@@ -103,6 +103,9 @@ final class FakeRender {
     static final class Bitmap {
         final String key;
         volatile boolean recycled = false;
+        /** pixel 模式下主体中心的像素颜色；0 表示未计算 */
+        int centerColor;
+        boolean drewText;
 
         Bitmap(String key) { this.key = key; }
     }
@@ -113,6 +116,8 @@ final class FakeRender {
         final Bitmap copy;
         /** 模拟 descriptor.recycle()：实现不应调用（API>10 空操作，R-CACHE-3） */
         boolean descriptorRecycleCalled = false;
+        int centerColor;
+        boolean drewText;
         int copyRecycles = 0;
 
         Descriptor(String key) {
@@ -139,6 +144,8 @@ final class FakeRender {
                 throw new IllegalStateException("fromBitmap 失败");
             }
             Descriptor d = new Descriptor(b.key);
+            d.centerColor = b.centerColor; // SDK 副本与合成位图像素相同
+            d.drewText = b.drewText;
             b.recycled = true; // R-CACHE-3：合成位图转换后立即回收
             made.add(d);
             return d;
@@ -174,6 +181,8 @@ final class FakeRender {
         java.util.function.Consumer<PaintJob> hook = job -> { };
         /** 为 true 时与 S10 真实 painter 一致，只支持纯形状（D-6）；默认支持全部以覆盖资源路径 */
         boolean pureShapeOnly = false;
+        /** 为 true 时用真实 ShapeRenderer 绘制到 CenterPixelSurface，记录主体中心像素 */
+        boolean pixel = false;
 
         @Override
         public boolean supports(NativeMarkerSpec spec) {
@@ -197,6 +206,11 @@ final class FakeRender {
             }
             painted.add(job.key);
             Bitmap out = new Bitmap(job.key);
+            if (pixel) {
+                CenterPixelSurface s = CenterPixelSurface.paint(job); // 走真实的 ShapeRenderer
+                out.centerColor = s.color;
+                out.drewText = s.drewText;
+            }
             outputs.add(out);
             return new Result(out, 0.5f, 1f);
         }

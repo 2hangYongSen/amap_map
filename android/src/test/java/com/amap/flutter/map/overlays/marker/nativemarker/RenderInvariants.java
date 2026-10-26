@@ -47,6 +47,12 @@ final class RenderInvariants {
                 assertTrue(e.id + " 占位点不应持有资源", e.heldImages.isEmpty());
                 continue;
             }
+            if (e.hidden) {
+                // D-5 不显示的点：不在地图上、没有显示条目与接收路径
+                assertTrue(e.id + " 隐藏点不应在地图上", !h.host.hasMarker(e.id) && e.shown == null);
+                assertTrue(e.id + " 隐藏点不应有接收路径", e.waiting[0] == null && e.applying[0] == null);
+                continue;
+            }
             boolean needNormal = !e.isRemoving() && (e.shown == null || !e.shown.key.equals(e.normalKey))
                     && !e.normalKey.equals(e.failedKey[0]);
             if (needNormal && !r.isTerminated()) {

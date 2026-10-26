@@ -33,6 +33,10 @@ public final class PointTable {
         final String[] failedKey = new String[2];
         /** D-6：painter 暂不支持该规格，显示协议桩的占位图标，没有 key 与接收路径 */
         boolean placeholder;
+        /** R-RES-6/D-5：背景与图标都失败且无文字，不显示；保留期望快照，恢复后按新增处理 */
+        boolean hidden;
+        /** R-NAT-REJ-2：已为该 normalKey 报过 invalidConfig，key 变化前不再报 */
+        String capErrorKey;
 
         Entry(String id) {
             this.id = id;

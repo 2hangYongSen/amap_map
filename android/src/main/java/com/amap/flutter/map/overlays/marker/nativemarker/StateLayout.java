@@ -62,7 +62,8 @@ public final class StateLayout {
         double contentH = Math.max(iconH, textH);
 
         // 2. 主体尺寸
-        boolean fallback = s.isImage() && !r.usable(s.imageId);
+        // 资源失败（R-RES-6）或九宫格超限（R-NAT-REJ-2）都按默认背景布局与绘制
+        boolean fallback = s.isImage() && (!r.usable(s.imageId) || s.capOverflow(r));
         double bw;
         double bh;
         if (s.bgType == NormStyle.BG_CIRCLE) {
