@@ -103,6 +103,16 @@ public class ImageRendererTest {
         assertTrue(c.get(3), c.get(3).startsWith("image img:A "));
         assertTrue(c.get(4), c.get(4).startsWith("text 'ab'"));
         assertEquals("九宫格 9 块", 9, s.images.get(0).length);
+        // 箭头底边伸进主体 1 物理像素（密度 2 → 0.5 逻辑像素），被图片盖住，不留缝
+        double bodyBottom = s.images.get(0)[8][7];
+        final double[] baseY = {Double.NaN};
+        s.paths.get(0).accept(new Outline.Visitor() {
+            @Override public void move(float x, float y) { baseY[0] = y; }
+            @Override public void line(float x, float y) { }
+            @Override public void cubic(float a, float b, float c2, float d, float e, float f) { }
+            @Override public void close() { }
+        });
+        assertEquals(bodyBottom - 0.5, baseY[0], 1e-6);
     }
 
     // 图标 + 文字，左对齐：图标在 padL，文字在图标 + 间距之后
