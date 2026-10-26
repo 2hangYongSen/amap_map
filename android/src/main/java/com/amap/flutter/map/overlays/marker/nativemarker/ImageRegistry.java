@@ -34,6 +34,8 @@ public final class ImageRegistry implements ImageResolver {
     private long clock = 0;
     private int decodeCount = 0;
     private boolean disposed = false;
+    /** 后台线程读取：销毁后排队中的解码不再执行 */
+    private volatile boolean decodeCancelled = false;
     private boolean decodedOverBudget = false;
 
     public ImageRegistry(ImageDecoder decoder, TaskRunner runner, long budgetBytes) {
@@ -121,21 +123,27 @@ public final class ImageRegistry implements ImageResolver {
         e.decoding = true;
         decodeCount++;
         final ImageSource src = e.source;
-        runner.background(() -> {
+        boolean accepted = runner.background(() -> {
             DecodedImage img = null;
-            Exception err = null;
-            try {
-                img = decoder.decode(src);
-            } catch (Exception ex) {
-                err = ex;
+            Throwable err = null;
+            // 销毁后仍在执行器队列里的解码直接跳过（§8.6 第一阶段撤销 queued）
+            if (!decodeCancelled) {
+                try {
+                    img = decoder.decode(src);
+                } catch (Exception | Error ex) {
+                    err = ex; // OOM 等 Error 也按 imageDecodeFailed 处理，不让后台线程崩溃
+                }
             }
             final DecodedImage out = img;
-            final Exception fail = err;
+            final Throwable fail = err;
             runner.main(() -> onDecoded(src.id, epoch, out, fail));
         });
+        if (!accepted) {
+            onDecoded(src.id, epoch, null, new IllegalStateException("后台执行器已关闭"));
+        }
     }
 
-    private void onDecoded(String id, int epoch, DecodedImage img, Exception err) {
+    private void onDecoded(String id, int epoch, DecodedImage img, Throwable err) {
         ImageEntry e = entries.get(id);
         // 已释放、已销毁或 epoch 变化（又重试或重新登记）：结果过期，直接丢弃
         if (disposed || e == null || e.epoch != epoch) {
@@ -200,6 +208,7 @@ public final class ImageRegistry implements ImageResolver {
     /** 第一阶段销毁（§8.6）：无引用的立即释放，仍被引用的进入 releasing 等最后一次 unref */
     public void dispose() {
         disposed = true;
+        decodeCancelled = true;
         for (ImageEntry e : new ArrayList<>(entries.values())) {
             e.releasing = true;
             tryFree(e);

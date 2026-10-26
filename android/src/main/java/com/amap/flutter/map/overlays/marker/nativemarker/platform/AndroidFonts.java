@@ -3,6 +3,8 @@ package com.amap.flutter.map.overlays.marker.nativemarker.platform;
 import android.graphics.Typeface;
 import android.os.Build;
 
+import com.amap.flutter.map.overlays.marker.nativemarker.FontWeights;
+
 import java.util.HashMap;
 import java.util.Map;
 
@@ -19,7 +21,7 @@ final class AndroidFonts {
             if (Build.VERSION.SDK_INT >= 28) {
                 t = Typeface.create(Typeface.DEFAULT, weight, false);
             } else {
-                t = weight >= 600 ? Typeface.DEFAULT_BOLD : Typeface.DEFAULT;
+                t = FontWeights.isBoldFallback(weight) ? Typeface.DEFAULT_BOLD : Typeface.DEFAULT;
             }
             CACHE.put(weight, t);
         }

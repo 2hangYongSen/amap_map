@@ -37,13 +37,21 @@ final class FakeImages {
     /** 每张图 w×h，占用 bytesPer；failing 中的 id 解码失败 */
     static final class Decoder implements ImageDecoder {
         final Set<String> failing = new HashSet<>();
+        /** 这些 id 解码时抛 OutOfMemoryError（Error 不得让后台线程崩溃） */
+        final Set<String> oom = new HashSet<>();
         final List<Image> produced = new ArrayList<>();
+        /** decode 实际被调用的次数（被撤销的排队解码不计） */
+        int calls = 0;
         int w = 100;
         int h = 50;
         long bytesPer = 20_000;
 
         @Override
         public DecodedImage decode(ImageSource s) throws Exception {
+            calls++;
+            if (oom.contains(s.id)) {
+                throw new OutOfMemoryError("解码 OOM: " + s.id);
+            }
             if (failing.contains(s.id)) {
                 throw new IllegalStateException("asset 暂不可读: " + s.id);
             }
@@ -58,9 +66,10 @@ final class FakeImages {
         final ArrayDeque<Runnable> bg = new ArrayDeque<>();
         final ArrayDeque<Runnable> mainQ = new ArrayDeque<>();
 
-        @Override public void background(Runnable r) { bg.add(r); }
+        @Override public boolean background(Runnable r) { bg.add(r); return true; }
         @Override public void main(Runnable r) { mainQ.add(r); }
         @Override public void mainDelayed(Runnable r, long ms) { mainQ.add(r); }
+        @Override public void cancelMainDelayed(Runnable r) { mainQ.remove(r); }
         @Override public void shutdown() { }
 
         /** 执行全部后台任务并把结果投递到主线程处理完 */

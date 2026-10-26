@@ -2,6 +2,7 @@ package com.amap.flutter.map.overlays.marker.nativemarker;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNotEquals;
+import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
 
 import org.junit.Test;
@@ -157,6 +158,34 @@ public class RenderKeyTest {
             } catch (InvalidMarkerException expected) {
                 // 期望抛出
             }
+        }
+    }
+
+    // D-1：形状背景 arrow.color 只能为空或等于 fillColor
+    @Test
+    public void shapeArrowColorMustMatchFill() throws Exception {
+        Map<String, Object> diff = style(80, null);
+        castMap((Map<?, ?>) diff.get("arrow")).put("color", 0xFFFF0000L);
+        expectInvalid(presentation("a", diff, null), "arrow.color");
+        Map<String, Object> same = style(80, null);
+        castMap((Map<?, ?>) same.get("arrow")).put("color", 0xFFFFFFFFL);
+        NativeMarkerSpec.parse(presentation("a", same, null)); // 等于填充色：合法
+    }
+
+    // D-4：文字不能含 \n、\r
+    @Test
+    public void textWithLineBreakRejected() {
+        for (String t : new String[]{"望京\n120套", "a\rb", "a\r\nb"}) {
+            expectInvalid(presentation(t, style(80, null), null), "换行");
+        }
+    }
+
+    private static void expectInvalid(Map<String, Object> p, String msgPart) {
+        try {
+            NativeMarkerSpec.parse(p);
+            fail("应拒绝 " + p);
+        } catch (InvalidMarkerException e) {
+            assertTrue(e.getMessage(), e.getMessage().contains(msgPart));
         }
     }
 

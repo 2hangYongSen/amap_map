@@ -41,6 +41,12 @@ final class RenderInvariants {
                 }
             }
             // 有效点位缺少普通态时恰好有一条接收路径（R-GEN-2）
+            if (e.placeholder) {
+                // D-6 占位点：没有 key、没有接收路径、不持有资源
+                assertTrue(e.id + " 占位点不应有接收路径", e.waiting[0] == null && e.applying[0] == null);
+                assertTrue(e.id + " 占位点不应持有资源", e.heldImages.isEmpty());
+                continue;
+            }
             boolean needNormal = !e.isRemoving() && (e.shown == null || !e.shown.key.equals(e.normalKey))
                     && !e.normalKey.equals(e.failedKey[0]);
             if (needNormal && !r.isTerminated()) {

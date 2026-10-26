@@ -5,6 +5,8 @@ import java.util.Collection;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.CancellationException;
+import java.util.concurrent.RejectedExecutionException;
 
 /**
  * TaskTable 与优先级调度（§8.2、§8.3）。主线程挑选下一个任务，后台最多 maxRunning 个并发：
@@ -13,7 +15,7 @@ import java.util.Map;
 final class RenderScheduler {
     interface Callback {
         /** 主线程：任务结束，result 与 error 二选一；资源 RUNNING 引用已归还 */
-        void onTaskDone(RenderTask t, MarkerPainter.Result result, Exception error);
+        void onTaskDone(RenderTask t, MarkerPainter.Result result, Throwable error);
     }
 
     /** 每个渲染 key 最多一个 queued 或 running 任务 */
@@ -138,24 +140,32 @@ final class RenderScheduler {
         t.job = new PaintJob(t.key, t.spec, t.selected, densityUnits, registry, t.expectReady);
         running++;
         final PaintJob job = t.job;
-        runner.background(() -> {
+        boolean accepted = runner.background(() -> {
             MarkerPainter.Result out = null;
-            Exception err = null;
+            Throwable err = null;
             try {
+                if (job.isCancelled()) {
+                    // 销毁前还在执行器队列里：不再绘制，直接走归还（§8.6 第一阶段第 2 步）
+                    throw new CancellationException("绘制已取消");
+                }
                 out = painter.paint(job);
-            } catch (Exception ex) {
-                err = ex;
+            } catch (Exception | Error ex) {
+                err = ex; // OOM 等 Error 也不能让后台线程崩溃，按 renderFailed 处理
             } finally {
                 // 无论成功、异常还是取消，都把 RUNNING 引用的归还投递回主线程（§8.6 第二阶段）
                 final MarkerPainter.Result r = out;
-                final Exception e = err;
+                final Throwable e = err;
                 runner.main(() -> finish(t, r, e));
             }
         });
+        if (!accepted) {
+            // 执行器已关闭：任务不会执行，立即在主线程归还（running--，可能进入 terminated）
+            finish(t, null, new RejectedExecutionException("后台执行器已关闭"));
+        }
     }
 
     /** 主线程：归还 RUNNING 引用，移出任务表，再交给回调分发（R-GEN-3） */
-    private void finish(RenderTask t, MarkerPainter.Result r, Exception e) {
+    private void finish(RenderTask t, MarkerPainter.Result r, Throwable e) {
         running--;
         tasks.remove(t.key);
         t.state = RenderTask.State.DONE;

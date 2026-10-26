@@ -108,6 +108,10 @@ class NativeMarkerValidator {
     if (!hasText && c.iconId == null) {
       ctx.fail('content', 'text 与 iconId 至少提供一个');
     }
+    // D-4：只支持单行文字
+    if (hasText && (c.text!.contains('\n') || c.text!.contains('\r'))) {
+      ctx.fail('content.text', '不能包含换行符 \\n 或 \\r');
+    }
     if (ctx.length('content.iconSpacing', c.iconSpacing) < 0) {
       ctx.fail('content.iconSpacing', '不能为负，实际为 ${c.iconSpacing}');
     }
@@ -236,6 +240,13 @@ class NativeMarkerValidator {
       // 图片背景下箭头单独绘制，颜色必须显式指定
       if (s.background is NativeMarkerImageBackground && arrow.color == null) {
         ctx.fail('$path.arrow.color', '图片背景下箭头必须指定颜色');
+      }
+      // D-1：形状背景的箭头与主体是同一条路径，颜色只能为空或等于 fillColor
+      final NativeMarkerBackground bg = s.background;
+      if (bg is NativeMarkerShapeBackground &&
+          arrow.color != null &&
+          arrow.color!.toARGB32() != bg.fillColor.toARGB32()) {
+        ctx.fail('$path.arrow.color', '形状背景的箭头颜色只能为空或等于 fillColor');
       }
     }
     final NativeMarkerShadow? shadow = s.shadow;

@@ -130,6 +130,9 @@ public final class NormStyle {
                 && (maxWidth == null || width <= maxWidth)), "width 必须落在 minWidth 与 maxWidth 之间");
         SpecReader.require(!hasArrow || bgType != BG_IMAGE || arrowColor != null,
                 "图片背景下箭头必须指定颜色");
+        // D-1：形状背景的箭头与主体是同一条路径，颜色只能为空或等于 fillColor
+        SpecReader.require(!hasArrow || bgType == BG_IMAGE || arrowColor == null
+                || arrowColor == fillColor, "形状背景的 arrow.color 只能为空或等于 fillColor");
     }
 
     private static void nonNeg(String what, int[] vs) throws InvalidMarkerException {

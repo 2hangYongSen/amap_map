@@ -3,12 +3,18 @@ package com.amap.flutter.map.overlays.marker.nativemarker;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
+import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
 
 import org.junit.Test;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicReference;
 
 /** §8.6 两阶段销毁：T-DISP-1/3/4/5 与 R-DISP-4 */
 public class DisposeTest {
@@ -28,10 +34,12 @@ public class DisposeTest {
         RenderHarness h = new RenderHarness();
         h.manager.attach();
         h.add(Payloads.nativeMarker("a", "a"));
-        h.loop.runMain(); // 任务进入 running，后台尚未执行
+        h.loop.runMain(); // 任务已提交到后台
         int adds = h.host.count("add:");
         int events = h.emitted.size();
-        h.manager.dispose();
+        // 绘制执行期间 dispose（尚未开始执行的任务会被取消标记直接撤销）
+        h.painter.hook = job -> h.manager.dispose();
+        h.loop.runBg();
         assertFalse(h.manager.isTerminated());
         assertEquals(1, h.loop.shutdownCalls);
         h.loop.drain();
@@ -42,28 +50,36 @@ public class DisposeTest {
         RenderInvariants.checkTerminated(h);
     }
 
-    // T-DISP-3：任务在读取资源 A 中途 dispose；A releasing 且未回收，B 已释放，归还后 A 释放
+    // T-DISP-3：真实后台线程阻塞在 drawBitmap 替身里，测试线程（主线程）调用 dispose
     @Test
-    public void tDisp3_runningInputSurvivesDispose() {
+    public void tDisp3_runningInputSurvivesDispose() throws Exception {
         RenderHarness h = new RenderHarness();
+        h.manager.attach();
         h.images(Payloads.bytesImage("A"), Payloads.bytesImage("B"));
         h.add(Payloads.withImage("mB", "b", "B"));
         h.loop.drain();
         assertNotNull(h.point("mB").shown());
-        h.add(Payloads.withImage("mA", "a", "A"));
-        final boolean[] midRead = {false};
+        CountDownLatch entered = new CountDownLatch(1);
+        CountDownLatch release = new CountDownLatch(1);
+        AtomicReference<Throwable> bgError = new AtomicReference<>();
         h.painter.hook = job -> {
-            if (job.spec.imageIds().contains("A")) {
-                // 读取中途调用 dispose：同步返回，输入不得被回收
-                h.manager.dispose();
+            entered.countDown(); // 已进入“读取 A 的像素”
+            try {
+                assertTrue(release.await(5, TimeUnit.SECONDS));
                 assertFalse("读取中 A 已被回收", job.image("A").isRecycled());
-                midRead[0] = true;
+            } catch (Throwable t) {
+                bgError.set(t);
             }
         };
-        h.loop.runMain(); // A 的任务进入 running
-        assertEquals(1, h.r().scheduler.runningCount());
-        h.loop.runBg();    // 任务读 A，途中 dispose
-        assertTrue(midRead[0]);
+        ExecutorService bg = Executors.newSingleThreadExecutor();
+        h.loop.realBg = bg;
+        h.add(Payloads.withImage("mA", "a", "A"));
+        h.loop.runMain(); // 挑选任务，提交到真实后台线程
+        assertTrue("后台线程未进入绘制", entered.await(5, TimeUnit.SECONDS));
+        int adds = h.host.count("add:");
+        int events = h.emitted.size();
+        int made = h.icons.made.size();
+        h.manager.dispose(); // 测试线程即主线程：同步返回，不等待后台
         ImageEntry a = h.r().registry.entry("A");
         assertNotNull(a);
         assertTrue(a.isReleasing());
@@ -71,8 +87,17 @@ public class DisposeTest {
         assertFalse(produced(h, "A").isRecycled());
         assertTrue("无执行中引用的 B 已释放", produced(h, "B").isRecycled());
         assertFalse(h.manager.isTerminated());
+        release.countDown(); // 放行，后台继续读 A 并结束
+        bg.shutdown();
+        assertTrue(bg.awaitTermination(5, TimeUnit.SECONDS));
+        assertNull("后台读取出错", bgError.get());
+        h.loop.runMain(); // 处理后台投递回主线程的归还
+        assertEquals("不得 addMarker", adds, h.host.count("add:"));
+        assertEquals("不得发事件", events, h.emitted.size());
+        assertEquals("不得写缓存", made, h.icons.made.size());
+        assertEquals(1, h.icons.discarded.size());
+        assertTrue("迟到输出直接回收", h.painter.outputs.get(h.painter.outputs.size() - 1).recycled);
         assertEquals(0, h.painter.readRecycled);
-        h.loop.drain(); // 归还
         assertTrue(produced(h, "A").isRecycled());
         RenderInvariants.checkTerminated(h);
     }

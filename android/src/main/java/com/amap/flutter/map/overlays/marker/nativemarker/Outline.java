@@ -1,6 +1,7 @@
 package com.amap.flutter.map.overlays.marker.nativemarker;
 
 import java.util.Arrays;
+import java.util.Locale;
 
 /**
  * 与平台无关的路径数据（像素坐标）。由 OutlineBuilder 生成，AndroidSurface 转成 android.graphics.Path。
@@ -97,10 +98,11 @@ public final class Outline {
     public String toString() {
         StringBuilder sb = new StringBuilder();
         accept(new Visitor() {
-            @Override public void move(float x, float y) { sb.append(String.format("M%.3f,%.3f ", x, y)); }
-            @Override public void line(float x, float y) { sb.append(String.format("L%.3f,%.3f ", x, y)); }
+            // %a 是十六进制浮点，逐位精确：任何 1 ulp 差异都会体现在文本里（T-KEY-4）
+            @Override public void move(float x, float y) { sb.append(String.format(Locale.ROOT, "M%a,%a ", x, y)); }
+            @Override public void line(float x, float y) { sb.append(String.format(Locale.ROOT, "L%a,%a ", x, y)); }
             @Override public void cubic(float a, float b, float c, float d, float e, float f) {
-                sb.append(String.format("C%.3f,%.3f,%.3f,%.3f,%.3f,%.3f ", a, b, c, d, e, f));
+                sb.append(String.format(Locale.ROOT, "C%a,%a,%a,%a,%a,%a ", a, b, c, d, e, f));
             }
             @Override public void close() { sb.append("Z "); }
         });
