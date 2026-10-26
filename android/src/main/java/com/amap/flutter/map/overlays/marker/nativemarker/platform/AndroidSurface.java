@@ -1,13 +1,19 @@
 package com.amap.flutter.map.overlays.marker.nativemarker.platform;
 
+import android.graphics.Bitmap;
+import android.graphics.BlurMaskFilter;
 import android.graphics.Canvas;
-import android.graphics.Color;
 import android.graphics.Matrix;
 import android.graphics.Paint;
 import android.graphics.Path;
+import android.graphics.Rect;
+import android.graphics.RectF;
 
+import com.amap.flutter.map.overlays.marker.nativemarker.DecodedImage;
 import com.amap.flutter.map.overlays.marker.nativemarker.DrawSurface;
 import com.amap.flutter.map.overlays.marker.nativemarker.Outline;
+import com.amap.flutter.map.overlays.marker.nativemarker.RectD;
+import com.amap.flutter.map.overlays.marker.nativemarker.ShadowSpec;
 
 /**
  * DrawSurface 的 Canvas 实现：逻辑坐标乘密度后落到物理像素。
@@ -65,6 +71,52 @@ final class AndroidSurface implements DrawSurface {
         // 行高 = descent − ascent，中线对齐 centerY
         float baseline = (float) centerY * density - (m.ascent + m.descent) / 2;
         canvas.drawText(text, (float) x * density, baseline, paint);
+    }
+
+    @Override
+    public void image(DecodedImage img, double[][] slices) {
+        paint.reset();
+        paint.setFilterBitmap(true); // 拉伸时双线性过滤
+        drawSlices(canvas, ((BitmapImage) img).bitmap, slices, 0, 0, density);
+    }
+
+    /** E-A5：drawBitmap + setShadowLayer 阴影色不对，改用 extractAlpha 遮罩 + BlurMaskFilter */
+    @Override
+    public void imageShadow(DecodedImage img, double[][] slices, RectD b, ShadowSpec sh) {
+        int w = Math.max(1, (int) Math.ceil(b.width() * density));
+        int h = Math.max(1, (int) Math.ceil(b.height() * density));
+        Bitmap tmp = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888);
+        Bitmap mask = null;
+        try {
+            paint.reset();
+            paint.setFilterBitmap(true);
+            // 先把背景（九宫格先合成）画到与主体同尺寸的临时位图
+            drawSlices(new Canvas(tmp), ((BitmapImage) img).bitmap, slices, b.left, b.top, density);
+            mask = tmp.extractAlpha();
+            reset(Paint.Style.FILL, sh.color);
+            if (sh.blur > 0) {
+                paint.setMaskFilter(new BlurMaskFilter((float) sh.blur * density,
+                        BlurMaskFilter.Blur.NORMAL));
+            }
+            canvas.drawBitmap(mask, (float) (b.left + sh.dx) * density,
+                    (float) (b.top + sh.dy) * density, paint);
+        } finally {
+            tmp.recycle();
+            if (mask != null) {
+                mask.recycle();
+            }
+        }
+    }
+
+    /** 切片 dst 以 (originX, originY) 为原点换算成物理像素 */
+    private void drawSlices(Canvas c, Bitmap src, double[][] slices, double originX,
+                            double originY, float d) {
+        for (double[] s : slices) {
+            Rect from = new Rect((int) s[0], (int) s[1], (int) s[2], (int) s[3]);
+            RectF to = new RectF((float) ((s[4] - originX) * d), (float) ((s[5] - originY) * d),
+                    (float) ((s[6] - originX) * d), (float) ((s[7] - originY) * d));
+            c.drawBitmap(src, from, to, paint);
+        }
     }
 
     private void reset(Paint.Style style, int color) {

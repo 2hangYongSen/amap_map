@@ -36,6 +36,8 @@ flutter:
   # To add assets to your application, add an assets section, like this:
   assets:
     - assets/
+    # 目录声明不递归，原生点位示例图需要单独列出
+    - assets/native_marker/
   # assets:
   #   - images/a_dot_burr.jpeg
   #   - images/a_dot_ham.jpeg

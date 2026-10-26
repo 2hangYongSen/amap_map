@@ -32,7 +32,11 @@ final class FakeImages {
         @Override public long byteCount() { return bytes; }
         @Override public void recycle() { recycled = true; }
         @Override public boolean isRecycled() { return recycled; }
+        @Override public String toString() { return "img:" + id; }
     }
+
+    /** 假图片的“像素颜色”：整张图同一种颜色，供中心像素断言 */
+    static final int IMAGE_COLOR = 0xFF3366CC;
 
     /** 每张图 w×h，占用 bytesPer；failing 中的 id 解码失败 */
     static final class Decoder implements ImageDecoder {

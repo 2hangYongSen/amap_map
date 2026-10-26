@@ -21,4 +21,13 @@ public interface DrawSurface {
      * 基线由平台按字体度量计算，保证行高与测量器一致。
      */
     void text(String text, double x, double centerY, double fontSize, int fontWeight, int color);
+
+    /** 绘制图片切片（NinePatch 的输出：src 为图片像素，dst 为逻辑像素） */
+    void image(DecodedImage img, double[][] slices);
+
+    /**
+     * 图片背景阴影（§9.3，E-A5）：先把切片合成到 bounds 大小的临时位图，取 alpha 遮罩，
+     * 再用阴影色加模糊画到 bounds + offset 处。只画阴影，不画图片本身。
+     */
+    void imageShadow(DecodedImage img, double[][] slices, RectD bounds, ShadowSpec shadow);
 }

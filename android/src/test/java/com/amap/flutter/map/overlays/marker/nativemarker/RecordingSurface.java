@@ -47,6 +47,30 @@ final class RecordingSurface implements DrawSurface {
                 t, x, cy, font, weight, color));
     }
 
+    /** 图片调用：每项为切片数组 */
+    final List<double[][]> images = new ArrayList<>();
+
+    @Override
+    public void image(DecodedImage img, double[][] slices) {
+        images.add(slices);
+        calls.add("image " + img + " " + slices(slices));
+    }
+
+    @Override
+    public void imageShadow(DecodedImage img, double[][] slices, RectD b, ShadowSpec s) {
+        calls.add(String.format(Locale.ROOT, "imageShadow %s %08x b=%a d=%a,%a bounds=%a,%a,%a,%a %s",
+                img, s.color, s.blur, s.dx, s.dy, b.left, b.top, b.right, b.bottom, slices(slices)));
+    }
+
+    private static String slices(double[][] ss) {
+        StringBuilder sb = new StringBuilder();
+        for (double[] s : ss) {
+            sb.append(String.format(Locale.ROOT, "[%a,%a,%a,%a>%a,%a,%a,%a]",
+                    s[0], s[1], s[2], s[3], s[4], s[5], s[6], s[7]));
+        }
+        return sb.toString();
+    }
+
     /** 记录每次测量的输入 */
     static final class Measurer implements TextMeasurer {
         final TextMeasurer inner = Fixtures.measurer();

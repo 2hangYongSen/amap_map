@@ -13,10 +13,10 @@ import java.util.concurrent.CancellationException;
 
 /** 后台线程把 PaintJob 画成 ARGB_8888 位图；布局、绘制算法都在纯 Java 的 ShapeRenderer 中 */
 public final class NativeMarkerPainter implements MarkerPainter {
-    /** D-6：图片背景与图标在 S11 实现，之前只完整绘制纯形状点位 */
+    /** S11 起形状、图片背景（固定尺寸 / 九宫格）与图标全部完整绘制 */
     @Override
     public boolean supports(NativeMarkerSpec spec) {
-        return spec.isPureShape();
+        return true;
     }
 
     @Override
@@ -32,7 +32,7 @@ public final class NativeMarkerPainter implements MarkerPainter {
         Bitmap bitmap = Bitmap.createBitmap(layout.width, layout.height, Bitmap.Config.ARGB_8888);
         try {
             AndroidSurface surface = new AndroidSurface(new Canvas(bitmap), density);
-            ShapeRenderer.render(job.spec, layout, job.selected, measurer, surface, job);
+            ShapeRenderer.render(job.spec, layout, job.selected, measurer, job, surface, job);
             if (job.isCancelled()) {
                 throw new CancellationException("绘制已取消");
             }
