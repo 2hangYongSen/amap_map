@@ -17,6 +17,15 @@ public final class RenderDeps {
     public long frameBudgetNanos = FrameApplier.DEFAULT_BUDGET_NANOS;
     /** 后台同时执行的绘制任务数；生产为 1（单线程执行器），测试可调大验证计数 */
     public int maxRunning = 1;
+    /** 调试日志出口；默认丢弃 */
+    public DiagLog log = msg -> { };
+    /** 销毁后等待 running 任务归还的时限（R-DISP-4） */
+    public long stuckCheckMillis = 10_000;
+
+    /** 日志出口，Android 实现转 LogUtil.d */
+    public interface DiagLog {
+        void d(String message);
+    }
 
     public RenderDeps(ImageDecoder decoder, TaskRunner runner, MarkerPainter painter,
                       IconFactory icons, FrameClock clock, int densityUnits) {

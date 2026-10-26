@@ -60,6 +60,8 @@ final class FakeImages {
 
         @Override public void background(Runnable r) { bg.add(r); }
         @Override public void main(Runnable r) { mainQ.add(r); }
+        @Override public void mainDelayed(Runnable r, long ms) { mainQ.add(r); }
+        @Override public void shutdown() { }
 
         /** 执行全部后台任务并把结果投递到主线程处理完 */
         void drain() {

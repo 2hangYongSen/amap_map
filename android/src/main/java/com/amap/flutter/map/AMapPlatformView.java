@@ -69,7 +69,7 @@ public class AMapPlatformView
             AMap amap = mapView.getMap();
             mapsInitializerController = new MapsInitializerController(methodChannel);
             mapController = new MapController(methodChannel, mapView);
-            markersController = new MarkersController(methodChannel, amap);
+            markersController = new MarkersController(methodChannel, amap, context);
             polylinesController = new PolylinesController(methodChannel, amap);
             polygonsController = new PolygonsController(methodChannel, amap);
             initMyMethodCallHandlerMap();

@@ -13,6 +13,7 @@ final class RenderHarness {
     final FakeImages.Decoder decoder = new FakeImages.Decoder();
     final FakeMarkerHost host = new FakeMarkerHost();
     final List<String> emitted = new ArrayList<>();
+    final List<String> logs = new ArrayList<>();
     final List<Map<String, Object>> emittedArgs = new ArrayList<>();
     final NativeMarkerManager manager;
     private int syncId = 0;
@@ -28,6 +29,7 @@ final class RenderHarness {
     RenderHarness(int maxRunning, long cacheBudget) {
         RenderDeps d = new RenderDeps(decoder, loop, painter, icons, loop, 2880); // 密度 2.8125
         d.maxRunning = maxRunning;
+        d.log = logs::add;
         d.cacheBudget = cacheBudget;
         manager = new NativeMarkerManager(host, (m, a) -> {
             emitted.add(m);

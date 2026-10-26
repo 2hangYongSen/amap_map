@@ -23,6 +23,11 @@ final class NativeRenderer implements ImageRegistry.Listener, RenderPipeline.Lis
     private final MarkerHost host;
     private final NativeEventLog events;
     private final int densityUnits;
+    private final TaskRunner runner;
+    private final RenderDeps.DiagLog log;
+    private final long stuckCheckMillis;
+    /** 销毁 10s 后仍未归还的 running 任务数（诊断模式计入 disposeStuckTasks） */
+    private int stuckTasks = 0;
     /**
      * 最近一次数据刷新时的淘汰计数；之后再发生淘汰就暂停预热到下次刷新，
      * 避免“预热入缓存 → 超预算淘汰 → 再预热”的循环（R-PRI-3）
@@ -36,6 +41,9 @@ final class NativeRenderer implements ImageRegistry.Listener, RenderPipeline.Lis
         this.host = host;
         this.events = events;
         this.densityUnits = d.densityUnits;
+        this.runner = d.runner;
+        this.log = d.log;
+        this.stuckCheckMillis = d.stuckCheckMillis;
         registry = new ImageRegistry(d.decoder, d.runner, d.decodeBudget);
         registry.setListener(this);
         refs = new ImageRefs(registry);
@@ -261,9 +269,25 @@ final class NativeRenderer implements ImageRegistry.Listener, RenderPipeline.Lis
         points.clear();
         cache.evictAllEvictable();
         registry.dispose();
+        runner.shutdown(); // 只停止接收新任务，不等待也不中断（R-DISP-3）
         if (scheduler.runningCount() == 0) {
             terminate();
+        } else {
+            runner.mainDelayed(this::checkStuck, stuckCheckMillis);
         }
+    }
+
+    /** R-DISP-4：10s 后仍有 running 任务，只记录一次日志，仍不回收其输入 */
+    private void checkStuck() {
+        int n = scheduler.runningCount();
+        if (!terminated && n > 0) {
+            stuckTasks = n;
+            log.d("销毁后仍有 " + n + " 个绘制任务未归还，输入资源保持不动");
+        }
+    }
+
+    int stuckTasks() {
+        return stuckTasks;
     }
 
     /** 第二阶段：最后一个 running 任务归还后，注册表与缓存应已全部为空 */

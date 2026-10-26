@@ -17,9 +17,22 @@ final class FakeRender {
         final ArrayDeque<Runnable> mainQ = new ArrayDeque<>();
         final List<Runnable> frames = new ArrayList<>();
         long now = 0;
+        /** mainDelayed 投递的任务，测试用 fireDelayed 触发 */
+        final List<Runnable> delayed = new ArrayList<>();
+        int shutdownCalls = 0;
+
+        void fireDelayed() {
+            List<Runnable> rs = new ArrayList<>(delayed);
+            delayed.clear();
+            for (Runnable r : rs) {
+                r.run();
+            }
+        }
 
         @Override public void background(Runnable r) { bg.add(r); }
         @Override public void main(Runnable r) { mainQ.add(r); }
+        @Override public void mainDelayed(Runnable r, long ms) { delayed.add(r); }
+        @Override public void shutdown() { shutdownCalls++; }
         @Override public void postFrame(Runnable r) { frames.add(r); }
         @Override public void removeFrame(Runnable r) { frames.remove(r); }
         @Override public long nanoTime() { return now; }
@@ -127,9 +140,12 @@ final class FakeRender {
         final Set<String> failing = new HashSet<>();
         /** 绘制时读到的资源已被回收的次数（R-DISP-1 应恒为 0） */
         int readRecycled = 0;
+        /** 读取资源之前调用，可阻塞或抛异常（T-DISP-3/4） */
+        java.util.function.Consumer<PaintJob> hook = job -> { };
 
         @Override
         public Result paint(PaintJob job) throws Exception {
+            hook.accept(job);
             for (String id : job.spec.imageIds()) {
                 DecodedImage img = job.image(id);
                 if (img != null && img.isRecycled()) {
