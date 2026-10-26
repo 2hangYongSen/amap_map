@@ -11,13 +11,17 @@ public final class ShapeRenderer {
     static final int FALLBACK_FILL = 0xFFFFFFFF;
     static final int FALLBACK_BORDER = 0x1F000000;
     static final double FALLBACK_RADIUS = 4;
-    static final double FALLBACK_BORDER_WIDTH = 1;
+    /** D-2：描边 1 物理像素，换算为逻辑像素即 1/density */
+    static double fallbackBorderWidth(double density) {
+        return 1 / density;
+    }
 
     private ShapeRenderer() {
     }
 
     public static void render(NativeMarkerSpec spec, NativeMarkerLayout layout, boolean selected,
                               TextMeasurer m, DrawSurface s, Cancelable c) {
+        layout.requireWithinLimit(); // D-8
         StateLayout st = layout.state(selected);
         NormStyle style = selected ? spec.selectedOrNormal() : spec.normal;
         if (style.isImage() && !st.fallbackBackground) {
@@ -30,7 +34,7 @@ public final class ShapeRenderer {
         double ox = -st.anchorX;
         double oy = -st.anchorY;
         s.setOrigin(layout.px, layout.py);
-        drawBackground(style, st, ox, oy, s, c);
+        drawBackground(style, st, ox, oy, layout.density, s, c);
         check(c);
         if (!st.displayText.isEmpty()) {
             drawText(style, st, ox, oy, m, s);
@@ -38,11 +42,11 @@ public final class ShapeRenderer {
     }
 
     private static void drawBackground(NormStyle style, StateLayout st, double ox, double oy,
-                                       DrawSurface s, Cancelable c) {
+                                       double density, DrawSurface s, Cancelable c) {
         boolean fallback = style.isImage();
         int fill = fallback ? FALLBACK_FILL : style.fillColor;
         Integer borderColor = fallback ? Integer.valueOf(FALLBACK_BORDER) : style.borderColor;
-        double bw = fallback ? FALLBACK_BORDER_WIDTH : Norm.length(style.borderWidth);
+        double bw = fallback ? fallbackBorderWidth(density) : Norm.length(style.borderWidth);
         double w = st.body.width();
         double h = st.body.height();
         double r = style.bgType == NormStyle.BG_CIRCLE ? w / 2
@@ -54,12 +58,11 @@ public final class ShapeRenderer {
         double rr = Math.max(0, r - inset);
         double tipX = st.arrowTipX + ox;
         double tipY = Math.max(body.bottom, st.arrowTipY + oy - inset);
-        Integer arrowColor = style.hasArrow ? style.arrowColor : null;
-        boolean sameColor = arrowColor == null || arrowColor == fill;
         double arrowW = style.hasArrow ? Norm.length(style.arrowWidth) : 0;
 
-        // 同色箭头与主体合成一条连续路径；异色时箭头单独画三角形（§9.3）
-        Outline path = style.hasArrow && sameColor
+        // 箭头始终与主体合成一条连续路径（D-1：形状背景的箭头颜色只能等于填充色）；
+        // 降级背景同样合并，图片背景自带箭头三角形留给 S11
+        Outline path = style.hasArrow
                 ? OutlineBuilder.withArrow(body, rr, tipX, tipY, arrowW)
                 : OutlineBuilder.body(body, rr);
         check(c);
@@ -68,9 +71,6 @@ public final class ShapeRenderer {
                     Norm.length(style.shadowDx), Norm.length(style.shadowDy));
         } else {
             s.fill(path, fill);
-        }
-        if (style.hasArrow && !sameColor) {
-            s.fill(OutlineBuilder.triangle(tipX, tipY, body.bottom, arrowW), arrowColor);
         }
         if (inset > 0) {
             check(c);

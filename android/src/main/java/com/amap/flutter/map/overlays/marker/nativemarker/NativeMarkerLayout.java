@@ -55,6 +55,21 @@ public final class NativeMarkerLayout {
         return new int[]{px, py, w, h};
     }
 
+    /** D-8：合成位图任一边超过该物理像素数即不绘制 */
+    public static final int MAX_CANVAS_PX = 2048;
+
+    public boolean withinLimit() {
+        return width <= MAX_CANVAS_PX && height <= MAX_CANVAS_PX;
+    }
+
+    /** D-8：超限时抛异常，不裁剪；调度器把它报成 renderFailed */
+    public void requireWithinLimit() {
+        if (!withinLimit()) {
+            throw new IllegalStateException("合成位图 " + width + "x" + height
+                    + " 超过上限 " + MAX_CANVAS_PX + " 物理像素");
+        }
+    }
+
     /** SDK 锚点 u（两态共用画布，天然相同） */
     public float anchorU() {
         return px / (float) width;

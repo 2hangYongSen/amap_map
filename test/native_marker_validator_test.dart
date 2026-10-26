@@ -535,6 +535,28 @@ void main() {
                     arrow: const NativeMarkerArrow(
                         width: 10, height: 5, color: Color(0xFFFF0000)))));
     _valid('形状背景的箭头可沿用填充色', _pres());
+    // D-1：形状背景的箭头颜色只能为空或等于 fillColor
+    _valid(
+        '形状背景的箭头颜色等于填充色',
+        _pres(
+            style: _style().copyWith(
+                arrow: const NativeMarkerArrow(
+                    width: 10, height: 5, color: Color(0xFFFFFFFF)))));
+    _invalid(
+        '形状背景的箭头颜色与填充色不同',
+        _pres(
+            style: _style().copyWith(
+                arrow: const NativeMarkerArrow(
+                    width: 10, height: 5, color: Color(0xFFFF0000)))),
+        'style.arrow.color');
+  });
+
+  group('D-4 单行文字', () {
+    for (final String t in <String>['望京\n120套', 'a\rb', 'a\r\nb']) {
+      _invalid('文字含换行 ${t.codeUnits}',
+          _pres(content: NativeMarkerContent(text: t)), 'content.text');
+    }
+    _valid('单行文字', _pres(content: const NativeMarkerContent(text: '望京 120套')));
   });
 
   group('MarkerTransition', () {

@@ -31,6 +31,8 @@ public final class PointTable {
         final ApplyItem[] applying = new ApplyItem[2];
         /** 绘制或应用失败的 key：已报错、保持原显示，不再自动重试，直到 key 变化 */
         final String[] failedKey = new String[2];
+        /** D-6：painter 暂不支持该规格，显示协议桩的占位图标，没有 key 与接收路径 */
+        boolean placeholder;
 
         Entry(String id) {
             this.id = id;

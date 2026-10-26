@@ -94,7 +94,7 @@ class _NativeMarkerShapePageState extends State<NativeMarkerShapePage> {
           '朝阳区望京西园三区超长小区名称',
           shadow: _shadow),
       _area('a1', LatLng(_center.latitude + d, _center.longitude - d * 1.5),
-          '望京\n120套', const Color(0xFF1E88E5)),
+          '望京 120套', const Color(0xFF1E88E5)),
       _area('a2', LatLng(_center.latitude - d, _center.longitude + d * 1.5),
           '国贸 85', const Color(0xFF43A047)),
     ];

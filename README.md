@@ -251,6 +251,13 @@ class AMapController {
 
 ```
 
+### 原生点位的字重（Android）
+
+`NativeMarkerStyle.fontWeight` 只允许 w400/w500/w600/w700。Android API 28 及以上按精确字重绘制；低于 API 28 时系统字体只有常规和粗体两档，按以下规则降级：
+
+- w400、w500 → 常规
+- w600、w700 → 粗体
+
 ## Issues
 
 1. [android] app 的 targetSDKVersion >= 30, 地图页返回闪退

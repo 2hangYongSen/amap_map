@@ -130,9 +130,14 @@ public class RenderCacheTest {
         RenderInvariants.check(h);
         assertEquals(1, h.r().cache.get(h.point("pending").normalKey()).pendingRefs());
         assertEquals(1, h.r().cache.get(h.point("shown").normalKey()).displayRefs());
-        h.manager.dispose();
-        assertFalse("仍有 running 任务，尚未终止", h.manager.isTerminated());
         int adds = h.host.count("add:");
+        boolean[] terminatedMidPaint = {true};
+        h.painter.hook = job -> { // 绘制执行期间销毁
+            h.manager.dispose();
+            terminatedMidPaint[0] = h.manager.isTerminated();
+        };
+        h.loop.runBg();
+        assertFalse("仍有 running 任务，尚未终止", terminatedMidPaint[0]);
         h.loop.drain();
         assertEquals("销毁后不得 addMarker", adds, h.host.count("add:"));
         assertEquals(1, h.icons.discarded.size());

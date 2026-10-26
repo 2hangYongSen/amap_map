@@ -63,6 +63,11 @@ public final class NativeMarkerSpec {
         }
     }
 
+    /** 纯形状点位：无图标、两态都不是图片背景（D-6：S11 之前只有它走完整绘制） */
+    public boolean isPureShape() {
+        return iconId == null && !normal.isImage() && (selected == null || !selected.isImage());
+    }
+
     /** 选中态有效样式 */
     public NormStyle selectedOrNormal() {
         return selected != null ? selected : normal;
@@ -114,6 +119,9 @@ public final class NativeMarkerSpec {
     /** R-VAL-6/8 与内容字段的防御性校验 */
     private void validate() throws InvalidMarkerException {
         SpecReader.require(text != null || iconId != null, "text 与 iconId 至少提供一个");
+        // D-4：只支持单行文字
+        SpecReader.require(text == null || (text.indexOf('\n') < 0 && text.indexOf('\r') < 0),
+                "text 不能包含换行符");
         SpecReader.require(iconSpacing >= 0, "iconSpacing 不能为负");
         if (iconSize != null) {
             SpecReader.require(iconSize[0] >= 0 && iconSize[1] >= 0, "iconSize 不能为负");

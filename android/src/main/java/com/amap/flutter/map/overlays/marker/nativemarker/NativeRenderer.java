@@ -20,10 +20,14 @@ final class NativeRenderer implements ImageRegistry.Listener, RenderPipeline.Lis
     final FrameApplier applier;
     private final ImageRefs refs;
     private final RenderPipeline pipeline;
-    private final MarkerHost host;
-    private final NativeEventLog events;
+    /** terminate 后置空：主线程 Handler 里残留的 Runnable 不再间接持有 amap 与通道（R-DISP-3） */
+    private MarkerHost host;
+    private NativeEventLog events;
+    /** 同一实例用于投递与撤销 */
+    private final Runnable stuckCheck = this::checkStuck;
     private final int densityUnits;
     private final TaskRunner runner;
+    private final MarkerPainter painter;
     private final RenderDeps.DiagLog log;
     private final long stuckCheckMillis;
     /** 销毁 10s 后仍未归还的 running 任务数（诊断模式计入 disposeStuckTasks） */
@@ -44,6 +48,7 @@ final class NativeRenderer implements ImageRegistry.Listener, RenderPipeline.Lis
         this.runner = d.runner;
         this.log = d.log;
         this.stuckCheckMillis = d.stuckCheckMillis;
+        this.painter = d.painter;
         registry = new ImageRegistry(d.decoder, d.runner, d.decodeBudget);
         registry.setListener(this);
         refs = new ImageRefs(registry);
@@ -76,7 +81,12 @@ final class NativeRenderer implements ImageRegistry.Listener, RenderPipeline.Lis
 
     /** 新增或整体替换 native 点位（R-PROTO-2）：代次 +1，按新 key 接续（R-GEN-2/5） */
     void applyNative(FullMarkerOptions opt) {
+        if (!painter.supports(opt.spec)) {
+            applyPlaceholder(opt);
+            return;
+        }
         PointTable.Entry e = points.put(opt);
+        e.placeholder = false;
         for (String id : refs.hold(e, opt.spec.imageIds())) {
             events.error(ERR_IMAGE_MISSING, opt.id, id, "资源未登记: " + id);
         }
@@ -94,6 +104,33 @@ final class NativeRenderer implements ImageRegistry.Listener, RenderPipeline.Lis
         }
         computeKeys(e);
         reconcileRoles(e);
+    }
+
+    /**
+     * D-6：painter 暂不支持（含图标或图片背景，S11 开放）的点位保持协议桩行为：
+     * 只登记期望快照、显示占位图标，不调度、不持有资源引用、不报 renderFailed。
+     */
+    private void applyPlaceholder(FullMarkerOptions opt) {
+        PointTable.Entry e = points.put(opt);
+        pipeline.revokeAll(e);
+        refs.releaseAll(e);
+        e.placeholder = true;
+        e.normalKey = null;
+        e.selectedKey = null;
+        boolean exists = host.hasMarker(opt.id);
+        // 已显示原生位图时必须换成占位图标，之后才能归还显示引用（R-CACHE-1）
+        Object icon = !exists || e.shown != null ? host.defaultIcon() : null;
+        try {
+            if (exists) {
+                host.updateMarker(opt, icon);
+            } else {
+                host.addMarker(opt, icon);
+            }
+        } catch (RuntimeException ex) {
+            events.error(NativeMarkerManager.ERR_APPLY_FAILED, opt.id, null,
+                    String.valueOf(ex.getMessage()));
+        }
+        pipeline.releaseShown(e);
     }
 
     /** R-GEN-6 第一步：递增代次得到 g、标记待删除、撤销全部登记；Marker 暂时保留 */
@@ -229,12 +266,16 @@ final class NativeRenderer implements ImageRegistry.Listener, RenderPipeline.Lis
 
     @Override
     public void renderFailed(String markerId, String message) {
-        events.error(ERR_RENDER_FAILED, markerId, null, message);
+        if (events != null) {
+            events.error(ERR_RENDER_FAILED, markerId, null, message);
+        }
     }
 
     @Override
     public void applyFailed(String markerId, String message) {
-        events.error(NativeMarkerManager.ERR_APPLY_FAILED, markerId, null, message);
+        if (events != null) {
+            events.error(NativeMarkerManager.ERR_APPLY_FAILED, markerId, null, message);
+        }
     }
 
     @Override
@@ -273,7 +314,7 @@ final class NativeRenderer implements ImageRegistry.Listener, RenderPipeline.Lis
         if (scheduler.runningCount() == 0) {
             terminate();
         } else {
-            runner.mainDelayed(this::checkStuck, stuckCheckMillis);
+            runner.mainDelayed(stuckCheck, stuckCheckMillis);
         }
     }
 
@@ -294,6 +335,20 @@ final class NativeRenderer implements ImageRegistry.Listener, RenderPipeline.Lis
     private void terminate() {
         cache.evictAllEvictable();
         terminated = true;
+        runner.cancelMainDelayed(stuckCheck); // 提前归还时撤销 10s 检查
+        // 释放对 MarkersController（amap、methodChannel）的引用，Handler 只剩管理器内部对象
+        host = null;
+        events = null;
+        pipeline.detachHost();
+    }
+
+    /** 测试：terminate 后不再持有 host 与事件出口 */
+    boolean holdsHost() {
+        return host != null || pipeline.holdsHost();
+    }
+
+    boolean holdsSink() {
+        return events != null;
     }
 
     boolean isTerminated() {

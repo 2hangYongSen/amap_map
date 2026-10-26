@@ -20,7 +20,8 @@ final class RenderPipeline implements RenderScheduler.Callback, FrameApplier.Sin
     private final RenderCache cache;
     private final RenderScheduler scheduler;
     private final FrameApplier applier;
-    private final MarkerHost host;
+    /** 销毁最终完成时置空（R-DISP-3），之后不会再有 SDK 调用 */
+    private MarkerHost host;
     private final IconFactory icons;
     private Listener listener;
     boolean disposed = false;
@@ -39,6 +40,14 @@ final class RenderPipeline implements RenderScheduler.Callback, FrameApplier.Sin
 
     void setListener(Listener l) {
         this.listener = l;
+    }
+
+    void detachHost() {
+        host = null;
+    }
+
+    boolean holdsHost() {
+        return host != null;
     }
 
     /** R-GEN-2：need 为真时先为当前代次登记新路径，再撤销旧路径（旧 waiter / 旧应用项） */
@@ -108,7 +117,7 @@ final class RenderPipeline implements RenderScheduler.Callback, FrameApplier.Sin
 
     /** R-GEN-3：写缓存，再逐个校验 waiter；不通过的只丢这条登记，不丢位图 */
     @Override
-    public void onTaskDone(RenderTask t, MarkerPainter.Result result, Exception error) {
+    public void onTaskDone(RenderTask t, MarkerPainter.Result result, Throwable error) {
         if (disposed) {
             if (result != null) {
                 icons.discard(result.bitmap); // 迟到输出从未交给 SDK（R-DISP-2）
@@ -116,8 +125,15 @@ final class RenderPipeline implements RenderScheduler.Callback, FrameApplier.Sin
             listener.afterChange();
             return;
         }
-        RenderCache.Entry c = result == null ? null : cache.put(t.key, result.bitmap,
-                result.anchorU, result.anchorV);
+        RenderCache.Entry c = null;
+        if (result != null) {
+            try {
+                // fromBitmap 在 toDescriptor 内部，失败时它已在 finally 中回收合成位图
+                c = cache.put(t.key, result.bitmap, result.anchorU, result.anchorV);
+            } catch (RuntimeException | Error ex) {
+                error = ex; // 不写缓存，下面按绘制失败记 failedKey 并报 renderFailed
+            }
+        }
         for (Waiter w : new ArrayList<>(t.waiters)) {
             PointTable.Entry e = points.get(w.markerId);
             int r = PointTable.Entry.role(w.selected);
