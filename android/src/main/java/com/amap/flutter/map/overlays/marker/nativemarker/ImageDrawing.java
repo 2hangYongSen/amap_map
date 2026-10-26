@@ -8,6 +8,11 @@ final class ImageDrawing {
     private ImageDrawing() {
     }
 
+    /** 箭头底边与图片主体的重叠量：1 物理像素 */
+    static double arrowOverlap(double density) {
+        return 1 / density;
+    }
+
     static void background(NormStyle style, StateLayout st, double ox, double oy, double density,
                            ImageSet images, DrawSurface s, Cancelable c) {
         DecodedImage img = images == null ? null : images.image(style.imageId);
@@ -23,9 +28,10 @@ final class ImageDrawing {
             ShapeRenderer.check(c);
         }
         if (style.hasArrow) {
-            // 图片背景下 arrow.color 必填（NormStyle 已校验）；箭头不参与九宫格拉伸
+            // 图片背景下 arrow.color 必填（NormStyle 已校验）；箭头不参与九宫格拉伸。
+            // 底边向主体内多伸 1 物理像素，之后画的图片会盖住它，消除抗锯齿发丝缝
             Outline tri = OutlineBuilder.triangle(st.arrowTipX + ox, st.arrowTipY + oy,
-                    body.bottom, Norm.length(style.arrowWidth));
+                    body.bottom - arrowOverlap(density), Norm.length(style.arrowWidth));
             if (shadow != null) {
                 s.fillWithShadow(tri, style.arrowColor, shadow.color, shadow.blur, shadow.dx,
                         shadow.dy);
