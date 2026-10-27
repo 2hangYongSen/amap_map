@@ -43,6 +43,8 @@ typedef void (^S14Step)(S14Block next);
 @property(nonatomic, copy, nullable) void (^onViewFor)(S14Anno *a, S14View *v);
 @property(nonatomic, copy, nullable) void (^onDidAdd)(S14Anno *a, MAAnnotationView *v);
 @property(nonatomic, copy, nullable) void (^onFrame)(CFTimeInterval ts);
+// S16：插件点位控制器；设置后代理回调先交给它（与 AMapViewController 相同的分流，见 S16ExpTop.m）
+@property(nonatomic, strong, nullable) id markerController;
 // 点击类回调记录，每项形如 "tapped:S +12ms"（相对最近一次手指抬起）
 @property(nonatomic, strong, readonly) NSMutableArray<NSString *> *tapEvents;
 
@@ -70,6 +72,13 @@ typedef void (^S14Step)(S14Block next);
 - (void)startFrames;
 - (NSArray<NSArray<NSNumber *> *> *)stopFrames;  // 每项 @[dt(ms), moving(0/1)]
 - (NSString *)frameStats:(NSArray<NSArray<NSNumber *> *> *)frames;
+@end
+
+// S16 插件代理分流（S16ExpTop.m）
+@interface S14ExpHost (S16ExpTop)
+- (nullable MAAnnotationView *)pluginViewFor:(id<MAAnnotation>)annotation;
+- (void)pluginDidAdd:(MAAnnotationView *)view;
+- (void)pluginTapped:(MAAnnotationView *)view;
 @end
 
 // 常用步骤（实验文件 S14Exp*.m 用 runSteps 串起来；runI0 等按名字反射调用）

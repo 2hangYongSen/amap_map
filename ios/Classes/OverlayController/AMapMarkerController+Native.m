@@ -32,6 +32,7 @@ static NSString *const kApplyFailed = @"applyFailed";
     self.layoutCache.countLimit = 500;
     self.screenScale = UIScreen.mainScreen.scale;
     self.measurer = [AMapUIKitTextMeasurer new];
+    self.selection = [AMapSelectionState new];
     if (self.registry == nil) {
         self.registry = [[AMapImageRegistry alloc] initWithDecoder:[self defaultDecoder]
                                                            runner:[AMapImageRegistry defaultRunner]
@@ -92,8 +93,7 @@ static NSString *const kApplyFailed = @"applyFailed";
         @"syncId": @(self.lastSyncId),
         @"rejectedMarkerIds": [self.initialRejected copy],
         @"images": [self.registry snapshot],
-        // 原生单选在 S16 接入，此前选择状态恒为空
-        @"selection": @{@"selectedId": [NSNull null], @"revision": @0},
+        @"selection": [self.selection snapshot],
         @"lastEventSeq": @(self.events.lastEventSeq),
         @"errors": [self.events errorsSnapshot],
         @"errorsDropped": @(self.events.errorsDropped),
@@ -107,6 +107,7 @@ static NSString *const kApplyFailed = @"applyFailed";
         return;
     }
     self.v2 = YES;
+    [self applyMarkerOptions:params]; // 创建参数顶层带 markerSelection、markerTransition（§6.1）
     NSArray<AMapImageSource *> *images = [self parseImages:params key:@"imagesToAdd"];
     if (images == nil) {
         [self.events error:kInvalidConfig markerId:nil imageId:nil message:@"创建参数 imagesToAdd 结构错误"];
@@ -118,6 +119,7 @@ static NSString *const kApplyFailed = @"applyFailed";
             [self.initialRejected addObject:id_];
         }
     }
+    [self syncTopAnnotation];
 }
 
 - (NSDictionary *)nativeUpdate:(id)args {
@@ -132,9 +134,10 @@ static NSString *const kApplyFailed = @"applyFailed";
     NSMutableArray *rejected = [NSMutableArray array];
     // 顺序：登记资源 → 删除 → 新增 → 修改 → 释放资源（§6.2）
     [self registerImages:images];
+    NSMutableArray<NSString *> *removed = [NSMutableArray array];
     for (id id_ in AMapArray(args[@"markerIdsToRemove"])) {
-        if ([id_ isKindOfClass:[NSString class]]) {
-            [self removeOne:id_];
+        if ([id_ isKindOfClass:[NSString class]] && [self removeOne:id_]) {
+            [removed addObject:id_];
         }
     }
     [self applyList:args[@"markersToAdd"] rejected:rejected];
@@ -142,6 +145,12 @@ static NSString *const kApplyFailed = @"applyFailed";
     for (NSString *id_ in releases) {
         [self.registry releaseId:id_];
     }
+    [self syncTopAnnotation]; // R-TOP-2/4：本次请求的坐标、内容、可见性、删除一并调和
+    // 同一请求中又加回来的 id 不算删除
+    [removed filterUsingPredicate:[NSPredicate predicateWithBlock:^BOOL(NSString *id_, id b) {
+        return self.markerDict[id_] == nil;
+    }]];
+    [self emitRemoved:removed syncId:syncId];
     self.lastSyncId = syncId;
     return [self result:syncId accepted:YES rejected:rejected];
 }
@@ -172,6 +181,7 @@ static NSString *const kApplyFailed = @"applyFailed";
         [keepImages addObject:s.id_];
     }
     [self.registry releaseAllExcept:keepImages];
+    [self syncTopAnnotation]; // Dart 在 resync 返回时清空过渡条目，不发 markers#removed
     self.lastSyncId = syncId;
     return [self result:syncId accepted:YES rejected:rejected];
 }
@@ -212,6 +222,7 @@ static NSString *const kApplyFailed = @"applyFailed";
     next.generation = self.generations[id_].integerValue + 1;
     self.generations[id_] = @(next.generation);
     AMapMarker *current = self.markerDict[id_];
+    BOOL wasSelectable = current.selectable;
     NSArray<NSString *> *oldImages = current.heldImageIds ?: @[];
     [self holdImages:next];
     // 模式切换或 zIndex 变化（运行中改 zIndex 无效，E-I0）时换一个 annotation 重新添加
@@ -231,6 +242,10 @@ static NSString *const kApplyFailed = @"applyFailed";
     }
     [self dropImages:oldImages markerId:id_];
     [self reportCapOverflow:self.markerDict[id_]];
+    // R-SEL-7：选中点由可选中改为不可选中才取消（API 选中的非 selectable 点不受影响）
+    if ([id_ isEqualToString:self.selection.selectedId] && wasSelectable && !next.selectable) {
+        [self commitSelection:[self.selection set:nil reason:AMapSelectionReasonInvalidated]];
+    }
     return YES;
 }
 
@@ -273,13 +288,15 @@ static NSString *const kApplyFailed = @"applyFailed";
     m.icon = isNative ? nil : icon;
     m.image = image;
     m.selectedZIndex = [AMapNonNull(raw[@"selectedZIndex"]) isKindOfClass:[NSNumber class]] ? raw[@"selectedZIndex"] : nil;
+    m.selectable = [@YES isEqual:raw[@"selectable"]];
     return m;
 }
 
-- (void)removeOne:(NSString *)id_ {
+/// 选中点被删除时选择保留、不发事件（R-SEL-6）；高层 Annotation 由 syncTopAnnotation 移除（R-TOP-4）
+- (BOOL)removeOne:(NSString *)id_ {
     AMapMarker *m = self.markerDict[id_];
     if (m == nil) {
-        return;
+        return NO;
     }
     self.generations[id_] = @(self.generations[id_].integerValue + 1);
     [self detachViewsOf:id_];
@@ -287,6 +304,7 @@ static NSString *const kApplyFailed = @"applyFailed";
     [self.markerDict removeObjectForKey:id_];
     [self dropImages:m.heldImageIds ?: @[] markerId:id_];
     [self.capErrorKeys removeObjectForKey:id_];
+    return YES;
 }
 
 // ---------- 资源引用（R-RES-1 期望引用、R-RES-12 反向索引） ----------
@@ -387,8 +405,10 @@ static NSString *const kApplyFailed = @"applyFailed";
 }
 
 - (void)bindNativeView:(AMapNativeMarkerView *)view marker:(AMapMarker *)marker {
-    // 选中态在 S16 接入，此前一律按普通态绑定
-    [view bindMarker:marker layout:[self layoutForMarker:marker] selected:NO registry:self.registry];
+    // 高层 View 按选中态绑定；源点 View 一律普通态（选中时被隐藏，R-TOP-1）
+    BOOL isTop = [view.annotation isKindOfClass:[AMapSelectionAnnotation class]];
+    [view bindMarker:marker layout:[self layoutForMarker:marker] selected:isTop registry:self.registry];
+    [self applyTopRules:view marker:marker isTop:isTop];
     [[self boundViews] addObject:view];
 }
 

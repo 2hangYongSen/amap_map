@@ -13,6 +13,7 @@ cd "$here/ios"
 # TEST_RUNNER_ 前缀的环境变量会传给 UI 测试进程（去掉前缀）
 TEST_RUNNER_S14EXP="$exp" xcodebuild test -workspace Runner.xcworkspace -scheme S14 \
   -destination "$dest" "${cfg[@]}" -derivedDataPath ../build/s14dd -allowProvisioningUpdates \
+  -only-testing:S14UITests/S14UITests/testExperiment \
   -resultBundlePath "$out/result.xcresult" >"$out/xcodebuild.log" 2>&1 || echo "xcodebuild exit $?"
 xcrun xcresulttool export attachments --path "$out/result.xcresult" --output-path "$out" >/dev/null 2>&1 || true
 # 附件文件名是 UUID，按 manifest 改回附件名

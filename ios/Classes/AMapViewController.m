@@ -13,6 +13,7 @@
 #import "AMapMarkerController.h"
 #import "AMapMarker.h"
 #import "AMapNativeMarkerView.h"
+#import "AMapSelectionAnnotation.h"
 #import "MAPointAnnotation+Flutter.h"
 #import "AMapPolylineController.h"
 #import "MAPolyline+Flutter.h"
@@ -201,6 +202,8 @@
     __weak __typeof__(self) weakSelf = self;
     [self.channel addMethodName:@"map#update" withHandler:^(FlutterMethodCall * _Nonnull call, FlutterResult  _Nonnull result) {
         [weakSelf.mapView updateMapViewOption:call.arguments[@"options"] withRegistrar:weakSelf.registrar];
+        // 点位选项（选择、过渡）交给点位控制器，其余照旧
+        [weakSelf.markerController applyMarkerOptions:call.arguments[@"options"]];
         result(nil);
     }];
     [self.channel addMethodName:@"map#waitForMap" withHandler:^(FlutterMethodCall * _Nonnull call, FlutterResult  _Nonnull result) {
@@ -335,6 +338,10 @@
 //MARK: Annotation相关回调
 
 - (MAAnnotationView *)mapView:(MAMapView *)mapView viewForAnnotation:(id<MAAnnotation>)annotation {
+    if ([annotation isKindOfClass:[AMapSelectionAnnotation class]]) {
+        // 选中置顶的高层 Annotation（§10.2），按选中态绑定
+        return [_markerController nativeViewForSelectionAnnotation:(AMapSelectionAnnotation *)annotation mapView:mapView];
+    }
     if ([annotation isKindOfClass:[MAPointAnnotation class]] == NO) {
         return nil;
     }
@@ -363,6 +370,12 @@
  */
 - (void)mapView:(MAMapView *)mapView didAddAnnotationViews:(NSArray *)views {
     for (MAAnnotationView *view in views) {
+        if ([view.annotation isKindOfClass:[AMapSelectionAnnotation class]]) {
+            if ([view isKindOfClass:[AMapNativeMarkerView class]]) {
+                [_markerController rebindSelectionView:(AMapNativeMarkerView *)view];
+            }
+            continue;
+        }
         //F-2: 判断 annotation 类型（原来误写为 View 类型），不满足时跳过当前 View 而不是整体返回
         if ([view.annotation isKindOfClass:[MAPointAnnotation class]] == NO) {
             continue;
@@ -403,6 +416,11 @@
  * @param view annotationView
  */
 - (void)mapView:(MAMapView *)mapView didAnnotationViewTapped:(MAAnnotationView *)view {
+    if ([view.annotation isKindOfClass:[AMapSelectionAnnotation class]]) {
+        // R-TOP-5：高层 View 的点击按源点 id 进入正常流程，内部 Annotation 不暴露给 Dart
+        [_markerController onMarkerTap:((AMapSelectionAnnotation *)view.annotation).sourceMarkerId];
+        return;
+    }
     MAPointAnnotation *fAnno = view.annotation;
     if (fAnno.markerId == nil) {
         return;
@@ -465,6 +483,8 @@
  */
 - (void)mapView:(MAMapView *)mapView didSingleTappedAtCoordinate:(CLLocationCoordinate2D)coordinate {
     NSArray *latLng = [AMapConvertUtil jsonArrayFromCoordinate:coordinate];
+    // 点击启用的点位 View 不会回调这里（E-I2），无需去重；map#onTap 照旧发送
+    [_markerController onMapTap];
     [_channel invokeMethod:@"map#onTap" arguments:@{@"latLng":latLng}];
     NSArray *polylineRenderArray = [mapView getHittedPolylinesWith:coordinate traverseAll:NO];
     if (polylineRenderArray && polylineRenderArray.count > 0) {

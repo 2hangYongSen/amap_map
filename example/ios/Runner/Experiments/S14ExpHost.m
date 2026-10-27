@@ -356,6 +356,7 @@ static NSString *pt(CGPoint p) { return [NSString stringWithFormat:@"%.1f,%.1f",
 
 // ---- 地图代理 ----
 - (MAAnnotationView *)mapView:(MAMapView *)mapView viewForAnnotation:(id<MAAnnotation>)annotation {
+  if (self.markerController) return [self pluginViewFor:annotation];
   if (![annotation isKindOfClass:S14Anno.class]) return nil;
   S14Anno *a = (S14Anno *)annotation;
   self.viewForCount++;
@@ -375,6 +376,7 @@ static NSString *pt(CGPoint p) { return [NSString stringWithFormat:@"%.1f,%.1f",
 
 - (void)mapView:(MAMapView *)mapView didAddAnnotationViews:(NSArray *)views {
   for (MAAnnotationView *v in views) {
+    if (self.markerController) [self pluginDidAdd:v];
     if (self.onDidAdd && [v.annotation isKindOfClass:S14Anno.class]) self.onDidAdd((S14Anno *)v.annotation, v);
   }
 }
@@ -391,6 +393,7 @@ static NSString *pt(CGPoint p) { return [NSString stringWithFormat:@"%.1f,%.1f",
 }
 
 - (void)mapView:(MAMapView *)mapView didAnnotationViewTapped:(MAAnnotationView *)view {
+  if (self.markerController) return [self pluginTapped:view];
   [self record:[@"tapped:" stringByAppendingString:[self tagOf:view]]];
 }
 

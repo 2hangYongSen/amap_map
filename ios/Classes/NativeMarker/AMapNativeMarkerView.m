@@ -195,6 +195,8 @@ static void ApplyShadow(CALayer *l, AMapNativeMarkerStyle *s, CGPathRef path) {
     _backgroundImageView.image = nil;
     _shadowImageView.image = nil;
     self.hidden = NO;
+    self.accessibilityLabel = nil;
+    self.isAccessibilityElement = NO;
 }
 
 - (void)releaseDisplayRefs {
@@ -251,6 +253,11 @@ static void ApplyShadow(CALayer *l, AMapNativeMarkerStyle *s, CGPathRef path) {
     self.canShowCallout = marker.infoWindowEnable;
     self.zIndex = (NSInteger)marker.zIndex;
     self.hidden = !marker.visible || [self shouldHide:spec registry:registry];
+    // 无障碍：读出点位文字（完整文字，不是省略后的）；可点击的点标为按钮，选中态标 selected
+    self.isAccessibilityElement = spec.text.length > 0;
+    self.accessibilityLabel = spec.text;
+    self.accessibilityTraits = (marker.clickable ? UIAccessibilityTraitButton : UIAccessibilityTraitNone)
+        | (selected ? UIAccessibilityTraitSelected : UIAccessibilityTraitNone);
     [CATransaction commit];
 }
 
