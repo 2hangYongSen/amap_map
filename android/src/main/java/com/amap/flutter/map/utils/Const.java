@@ -48,11 +48,16 @@ public class Const {
     public static final String METHOD_MARKER_RESYNC = "markers#resync";
     /** 原生单选（§11） */
     public static final String METHOD_MARKER_SET_SELECTED = "markers#setSelected";
+    /** 诊断（§13），只在 markerDiagnostics 开启时可用 */
+    public static final String METHOD_DIAG_PING = "diag#ping";
+    public static final String METHOD_DIAG_CLEAR_CACHES = "diag#clearCaches";
     public static final String[] METHOD_ID_LIST_FOR_MARKER = {
             METHOD_MARKER_UPDATE,
             METHOD_MARKER_ATTACH,
             METHOD_MARKER_RESYNC,
-            METHOD_MARKER_SET_SELECTED
+            METHOD_MARKER_SET_SELECTED,
+            METHOD_DIAG_PING,
+            METHOD_DIAG_CLEAR_CACHES
     };
 
     /**

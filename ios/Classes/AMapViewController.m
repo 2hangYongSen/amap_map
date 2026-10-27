@@ -14,6 +14,8 @@
 #import "AMapMarker.h"
 #import "AMapNativeMarkerView.h"
 #import "AMapSelectionAnnotation.h"
+#import "AMapMarkerDiagnostics.h"
+#import "AMapDiagSquareView.h"
 #import "MAPointAnnotation+Flutter.h"
 #import "AMapPolylineController.h"
 #import "MAPolyline+Flutter.h"
@@ -103,6 +105,8 @@
         _markerController = [[AMapMarkerController alloc] init:_channel
                                                        mapView:_mapView
                                                      registrar:registrar];
+        // 诊断标记方块（R-TIME-6），只在诊断模式下首次使用时才加到地图上
+        _markerController.diag.square = [[AMapDiagSquareView alloc] initWithHost:_mapView];
         _polylinesController = [[AMapPolylineController alloc] init:_channel
                                                             mapView:_mapView
                                                           registrar:registrar];
@@ -416,6 +420,8 @@
  * @param view annotationView
  */
 - (void)mapView:(MAMapView *)mapView didAnnotationViewTapped:(MAAnnotationView *)view {
+    // SDK 10.1.200 的单击识别器等待双击放大识别失败后才回调这里。
+    // setSelectedMarker 跳过此等待；二进制证据与官方引用见 README「点位选择延迟」。
     if ([view.annotation isKindOfClass:[AMapSelectionAnnotation class]]) {
         // R-TOP-5：高层 View 的点击按源点 id 进入正常流程，内部 Annotation 不暴露给 Dart
         [_markerController onMarkerTap:((AMapSelectionAnnotation *)view.annotation).sourceMarkerId];

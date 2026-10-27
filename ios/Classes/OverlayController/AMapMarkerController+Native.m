@@ -43,6 +43,11 @@ static NSString *const kApplyFailed = @"applyFailed";
     self.events = [[AMapNativeEventLog alloc] initWithSink:^(NSString *method, NSDictionary *args) {
         [weakSelf.methodChannel invokeMethod:method arguments:args];
     }];
+    self.diag = [[AMapMarkerDiagnostics alloc] initWithEvents:self.events];
+    AMapImageRegistry *registry = self.registry;
+    __weak AMapImageRegistry *weakRegistry = registry;
+    self.diag.decodedBytes = ^NSUInteger { return [weakRegistry decodedBytes]; };
+    self.diag.decodedOverBudget = ^BOOL { return [weakRegistry decodedOverBudget]; };
 }
 
 /// 后台解码：bytes 直接解码，asset 经 registrar 查找打包路径；UIImage.scale = pixelRatio
@@ -132,6 +137,8 @@ static NSString *const kApplyFailed = @"applyFailed";
     self.v2 = YES;
     [self.initialRejected removeAllObjects];
     NSMutableArray *rejected = [NSMutableArray array];
+    // t2 与标记方块在同一次主线程调用内（R-TIME-6）
+    self.diagSync = [self.diag begin:syncId args:args];
     // 顺序：登记资源 → 删除 → 新增 → 修改 → 释放资源（§6.2）
     [self registerImages:images];
     NSMutableArray<NSString *> *removed = [NSMutableArray array];
@@ -152,7 +159,15 @@ static NSString *const kApplyFailed = @"applyFailed";
     }]];
     [self emitRemoved:removed syncId:syncId];
     self.lastSyncId = syncId;
+    [self endDiagSync];
     return [self result:syncId accepted:YES rejected:rejected];
+}
+
+/// iOS 布局同步：外观在本次调用内已绑定，t4 记在返回前（t4 ≤ t3）
+- (void)endDiagSync {
+    AMapDiagSync *s = self.diagSync;
+    self.diagSync = nil;
+    [self.diag end:s];
 }
 
 /// 以快照为唯一期望状态：多余点位删除，不在资源列表中的资源进入 releasing（R-RES-9）
@@ -164,6 +179,7 @@ static NSString *const kApplyFailed = @"applyFailed";
     }
     self.v2 = YES;
     [self.initialRejected removeAllObjects];
+    self.diagSync = [self.diag begin:syncId args:args];
     [self registerImages:images];
     NSMutableSet *keep = [NSMutableSet set];
     for (id raw in AMapArray(args[@"markers"])) {
@@ -183,6 +199,7 @@ static NSString *const kApplyFailed = @"applyFailed";
     [self.registry releaseAllExcept:keepImages];
     [self syncTopAnnotation]; // Dart 在 resync 返回时清空过渡条目，不发 markers#removed
     self.lastSyncId = syncId;
+    [self endDiagSync];
     return [self result:syncId accepted:YES rejected:rejected];
 }
 
@@ -196,8 +213,24 @@ static NSString *const kApplyFailed = @"applyFailed";
         return;
     }
     self.disposed = YES;
+    [self.diag setEnabled:NO]; // 隐藏标记方块、丢弃未完成的点击记录
     [self.events close];
     [self.registry dispose];
+}
+
+// ---------- 诊断命令（§13） ----------
+
+- (nullable NSDictionary *)diagPing {
+    return self.disposed ? nil : [self.diag ping];
+}
+
+/// 冷测试前清空布局缓存（iOS 没有合成位图缓存）；未开启返回 NO
+- (BOOL)diagClearCaches {
+    if (self.disposed || !self.diag.enabled) {
+        return NO;
+    }
+    [self.layoutCache removeAllObjects];
+    return YES;
 }
 
 // ---------- 单个点位 ----------
@@ -207,6 +240,9 @@ static NSString *const kApplyFailed = @"applyFailed";
         NSString *id_ = AMapReadId(raw);
         if (![self applyOne:raw markerId:id_]) {
             [rejected addObject:id_];
+        } else {
+            // 旧路径点击：该点已按新图标更新（setIcon 等价）即记 c2（R-TIME-7）
+            [self.diag touched:self.diagSync markerId:id_ isNative:self.markerDict[id_].isNative];
         }
     }
 }
@@ -388,6 +424,9 @@ static NSString *const kApplyFailed = @"applyFailed";
     if (l == nil) {
         l = [AMapNativeMarkerLayout layoutWithSpec:marker.spec measurer:self.measurer resolver:self.registry];
         [self.layoutCache setObject:l forKey:key];
+        self.diag.layoutMisses++; // 回执 drawCount / cacheMisses
+    } else {
+        self.diag.layoutHits++;
     }
     return l;
 }

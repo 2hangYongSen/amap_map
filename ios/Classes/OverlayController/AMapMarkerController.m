@@ -48,6 +48,15 @@
         [_methodChannel addMethodName:@"markers#resync" withHandler:^(FlutterMethodCall * _Nonnull call, FlutterResult  _Nonnull result) {
             result([weakSelf nativeResync:call.arguments]);
         }];
+        // 诊断（§13）：未开启时按 notImplemented 风格报错（§6.1）
+        [_methodChannel addMethodName:@"diag#ping" withHandler:^(FlutterMethodCall * _Nonnull call, FlutterResult  _Nonnull result) {
+            NSDictionary *r = [weakSelf diagPing];
+            result(r ?: [FlutterError errorWithCode:@"diagnosticsDisabled" message:@"markerDiagnostics 未开启" details:nil]);
+        }];
+        [_methodChannel addMethodName:@"diag#clearCaches" withHandler:^(FlutterMethodCall * _Nonnull call, FlutterResult  _Nonnull result) {
+            result([weakSelf diagClearCaches] ? nil
+                   : [FlutterError errorWithCode:@"diagnosticsDisabled" message:@"markerDiagnostics 未开启" details:nil]);
+        }];
         [_methodChannel addMethodName:@"markers#update" withHandler:^(FlutterMethodCall * _Nonnull call, FlutterResult  _Nonnull result) {
             // 按 protocolVersion 分流：不带即旧格式，行为与 1.0.15 相同（R-PROTO-3）
             if ([AMapMarkerController isV2Payload:call.arguments]) {
@@ -150,9 +159,17 @@
   if (!marker) {
     return NO;
   }
+  // c1：SDK 点击回调（仅诊断模式，R-TIME-7）
+  NSNumber *tapId = self.disposed ? nil : [self.diag tapBegin:markerId];
+  self.currentTapId = tapId;
   // R-SEL-3：先提交选择并发 selectionChanged，再发 marker#onTap（旧协议下无操作，R-SEL-9）
   [self selectionOnMarkerTap:markerId];
-  [_methodChannel invokeMethod:@"marker#onTap" arguments:@{@"markerId" : markerId}];
+  self.currentTapId = nil;
+  NSMutableDictionary *args = [@{@"markerId" : markerId} mutableCopy];
+  if (tapId) {
+    args[@"tapId"] = tapId; // 旧路径由 Dart 带回 markers#update（diagTapId）
+  }
+  [_methodChannel invokeMethod:@"marker#onTap" arguments:args];
   return YES;
 }
 

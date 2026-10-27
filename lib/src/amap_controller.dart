@@ -138,10 +138,39 @@ class AMapController {
 
   /// 设置原生选中点，返回原生提交后的 selectionRevision。
   ///
+  /// 此 API 跳过地图 SDK 点击路径的双击判定等待，共用原生选择更新逻辑；
+  /// 不保证即时呈现。证据与耗时验证边界见 README「点位选择延迟」。
+  ///
   /// 首次调用（包括传入 null）会启用新协议；地图已销毁或握手失败时抛出
   /// [MarkerSyncException]。传入与当前相同的 id 不会产生选择事件。
   Future<int> setSelectedMarker(String? markerId) =>
       _mapState._markerQueue.setSelected(markerId);
+
+  /// 诊断：一次 `diag#ping` 时钟样本（R-TIME-3）。d0/d1 用 [MarkerDiagnosticsClock]。
+  /// 诊断未开启时原生返回错误，抛出 [PlatformException]。
+  Future<MarkerClockSample> pingNativeClock() async {
+    final double d0 = MarkerDiagnosticsClock.nowMs();
+    final Map<Object?, Object?>? r = await _methodChannel.diagPing(mapId: mapId);
+    final double d1 = MarkerDiagnosticsClock.nowMs();
+    final Object? n = r?['nativeMs'];
+    if (n is! num) {
+      throw StateError('diag#ping 返回缺少 nativeMs');
+    }
+    return MarkerClockSample(d0Ms: d0, nativeMs: n.toDouble(), d1Ms: d1);
+  }
+
+  /// 诊断：连续 ping [samples] 次（规格要求每轮采样前后各 20 次），取往返最短的样本估算时钟偏移
+  Future<MarkerClockCalibration> calibrateNativeClock({int samples = 20}) async {
+    final List<MarkerClockSample> out = <MarkerClockSample>[];
+    for (int i = 0; i < samples; i++) {
+      out.add(await pingNativeClock());
+    }
+    return MarkerClockCalibration.fromSamples(out);
+  }
+
+  /// 诊断：冷测试前清空原生合成位图缓存（§13.4）；诊断未开启时抛出 [PlatformException]
+  Future<void> clearNativeMarkerCaches() =>
+      _methodChannel.diagClearCaches(mapId: mapId);
 
   Future<void> _updateMapOptions(Map<String, dynamic> optionsUpdate) {
     return _methodChannel.updateMapOptions(optionsUpdate, mapId: mapId);

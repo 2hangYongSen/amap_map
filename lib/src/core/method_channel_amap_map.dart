@@ -99,6 +99,16 @@ class MethodChannelAMapFlutterMap implements AMapFlutterPlatform {
         .invokeMapMethod<Object?, Object?>('markers#resync', payload);
   }
 
+  /// 诊断 `diag#ping`，返回 `{nativeMs}`；诊断未开启时原生报错（R-TIME-3）
+  Future<Map<Object?, Object?>?> diagPing({required int mapId}) {
+    return channel(mapId).invokeMapMethod<Object?, Object?>('diag#ping');
+  }
+
+  /// 诊断 `diag#clearCaches`：冷测试前清空原生合成缓存（§13.4）
+  Future<void> diagClearCaches({required int mapId}) {
+    return channel(mapId).invokeMethod<void>('diag#clearCaches');
+  }
+
   /// 更新polyline的数据
   Future<void> updatePolylines(
     PolylineUpdates polylineUpdates, {
@@ -249,6 +259,11 @@ class MethodChannelAMapFlutterMap implements AMapFlutterPlatform {
         break;
 
       case 'marker#onTap':
+        // 诊断模式带 tapId：先交给队列记下，再分发业务点击（R-TIME-7）
+        if (call.arguments is Map && call.arguments['tapId'] != null) {
+          _mapEventStreamController.add(MarkerProtocolEvent(mapId,
+              MarkerProtocolMessage.fromArguments(call.method, call.arguments)));
+        }
         _mapEventStreamController.add(MarkerTapEvent(
           mapId,
           call.arguments['markerId'],
@@ -265,6 +280,8 @@ class MethodChannelAMapFlutterMap implements AMapFlutterPlatform {
       case 'marker#imagesResult':
       case 'marker#selectionChanged':
       case 'markers#removed':
+      case 'markers#applied':
+      case 'markers#tapApplied':
         _mapEventStreamController.add(MarkerProtocolEvent(mapId,
             MarkerProtocolMessage.fromArguments(call.method, call.arguments)));
         break;

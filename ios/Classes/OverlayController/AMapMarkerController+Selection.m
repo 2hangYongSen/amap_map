@@ -31,8 +31,14 @@
     if (change == nil) {
         return;
     }
-    [self.events event:@"marker#selectionChanged" args:[change toMap]];
+    NSMutableDictionary *args = [[change toMap] mutableCopy];
+    if (self.currentTapId) {
+        args[@"tapId"] = self.currentTapId; // 仅诊断模式（R-TIME-2）
+    }
+    [self.events event:@"marker#selectionChanged" args:args];
     [self syncTopAnnotation];
+    // 新路径：外观已在本次调用内绑定到高层 View 或源点 View，即为 c2（R-TIME-7）
+    [self.diag tapAppliedNative:self.currentTapId];
 }
 
 /// 点位点击（R-SEL-2/3）：先提交选择并发 selectionChanged，再由调用方发 marker#onTap
@@ -62,6 +68,10 @@
     if (tr != nil) {
         self.replaceTransition = [tr isKindOfClass:[NSDictionary class]]
             && [@"replaceWhenReady" isEqual:tr[@"mode"]];
+    }
+    id diag = options[@"markerDiagnostics"];
+    if (diag != nil) {
+        [self.diag setEnabled:[@YES isEqual:diag]];
     }
 }
 

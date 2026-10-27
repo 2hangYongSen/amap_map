@@ -198,7 +198,32 @@ final class MarkerUpdateReport {
     required this.cacheMisses,
     required this.bytesReceived,
     this.memory = const MarkerMemoryReport(),
+    this.nativeT2vMs,
+    this.markerColor,
+    this.pendingTasks = 0,
+    this.dartT1Ms,
+    this.dartReturnMs,
   });
+
+  /// 标记方块提交时刻 t2v（原生时钟，与 t2 同一次主线程调用，R-TIME-6）；方块不可用时为空
+  final double? nativeT2vMs;
+
+  /// 本次标记方块颜色（ARGB），按 syncId 轮换，用于在录屏中关联 syncId
+  final int? markerColor;
+
+  /// t4 时仍未完成的绘制任务数（含选中态预热），可大于 0（§13.5）
+  final int pendingTasks;
+
+  /// Dart 发出该请求的时刻 t1（[MarkerDiagnosticsClock]）
+  final double? dartT1Ms;
+
+  /// Dart 收到该请求返回的时刻；回执先于返回到达时为空
+  final double? dartReturnMs;
+
+  /// 通道往返（Dart 同一时钟，R-TIME-1）；不能除以 2 当作单向传输
+  double? get dartRoundTripMs => dartT1Ms == null || dartReturnMs == null
+      ? null
+      : dartReturnMs! - dartT1Ms!;
 
   final int syncId;
   final double nativeT2Ms;
@@ -226,7 +251,12 @@ final class MarkerUpdateReport {
           cacheHits == other.cacheHits &&
           cacheMisses == other.cacheMisses &&
           bytesReceived == other.bytesReceived &&
-          memory == other.memory;
+          memory == other.memory &&
+          nativeT2vMs == other.nativeT2vMs &&
+          markerColor == other.markerColor &&
+          pendingTasks == other.pendingTasks &&
+          dartT1Ms == other.dartT1Ms &&
+          dartReturnMs == other.dartReturnMs;
 
   @override
   int get hashCode => Object.hash(
@@ -240,7 +270,12 @@ final class MarkerUpdateReport {
       cacheHits,
       cacheMisses,
       bytesReceived,
-      memory);
+      memory,
+      nativeT2vMs,
+      markerColor,
+      pendingTasks,
+      dartT1Ms,
+      dartReturnMs);
 
   @override
   String toString() => 'MarkerUpdateReport{syncId: $syncId, '

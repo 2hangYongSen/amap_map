@@ -42,9 +42,20 @@ public final class NativeMarkerManager {
                 : new NativeRenderer(points, host, events, deps, selection);
         this.transition = new ReplaceTransition(new TransitionOps(),
                 deps == null ? null : deps.runner);
+        this.diag = new Diagnostics(deps == null ? null : deps.clock, events, new DiagSource());
         if (renderer != null) {
             renderer.setTransition(transition);
+            renderer.setOnProgress(diag::check);
         }
+    }
+
+    /** 诊断与计时（§13），只在 markerDiagnostics 开启时工作 */
+    private final Diagnostics diag;
+    /** 当前点击的 tapId，随 selectionChanged 一起下发（R-TIME-2） */
+    private Integer currentTapId;
+
+    public Diagnostics diagnostics() {
+        return diag;
     }
 
     /** 原生单选（§11） */
@@ -156,6 +167,8 @@ public final class NativeMarkerManager {
         initialRejected.clear();
         Map<?, ?> m = (Map<?, ?>) args;
         List<String> rejected = new ArrayList<>();
+        // t2 与标记方块在同一次主线程调用内（R-TIME-6）
+        sync = diag.begin(syncId, args);
         // 顺序：登记资源 → 删除 → 新增 → 修改 → 释放资源（§6.2）
         registerImages(images);
         transition.beginUpdate();
@@ -175,7 +188,17 @@ public final class NativeMarkerManager {
         transition.endUpdate(); // 没有需要等待的新点即显式删除，立即执行（R-DEL-1）
         refreshDone();
         lastSyncId = syncId;
+        endSync();
         return result(syncId, true, rejected);
+    }
+
+    /** 当前请求的诊断记录；不在请求内或未开启时为 null */
+    private Diagnostics.Sync sync;
+
+    private void endSync() {
+        Diagnostics.Sync s = sync;
+        sync = null;
+        diag.end(s); // t3 在返回前；同步完成时 t4 ≤ t3
     }
 
     /** markers#resync：以快照为唯一期望状态，多余点位全部删除（R-RES-9） */
@@ -187,6 +210,7 @@ public final class NativeMarkerManager {
         }
         v2 = true;
         initialRejected.clear();
+        sync = diag.begin(syncId, args);
         registerImages(images);
         Object list = ((Map<?, ?>) args).get("markers");
         Set<String> keep = new HashSet<>();
@@ -216,6 +240,7 @@ public final class NativeMarkerManager {
         }
         refreshDone();
         lastSyncId = syncId;
+        endSync();
         return result(syncId, true, rejected);
     }
 
@@ -228,6 +253,7 @@ public final class NativeMarkerManager {
             return;
         }
         disposed = true;
+        diag.setEnabled(false); // 隐藏标记方块、丢弃未完成的计时记录
         events.close();
         transition.dispose(); // 撤销超时计时；Marker 由下面统一移除
         selectableIcons.clear();
@@ -254,6 +280,10 @@ public final class NativeMarkerManager {
             String id = FullMarkerOptions.readId(raw);
             if (!applyOne(raw, id)) {
                 rejected.add(id);
+            } else if (sync != null) {
+                diag.touched(sync, id);
+                // icon 点 setIcon 已返回即记 c2；native 点等外观到位（R-TIME-7）
+                diag.applied(id, points.get(id) != null);
             }
         }
     }
@@ -286,9 +316,18 @@ public final class NativeMarkerManager {
         if (c == null) {
             return;
         }
-        events.event("marker#selectionChanged", c.toMap());
+        Map<String, Object> args = c.toMap();
+        if (currentTapId != null) {
+            args.put("tapId", currentTapId); // 仅诊断模式（R-TIME-2）
+        }
+        events.event("marker#selectionChanged", args);
         if (renderer != null) {
             renderer.selectionChanged(c.previousId, c.selectedId);
+        }
+        // 点击引起的选择变化：c2 记在选中外观提交到 SDK 时（新路径，R-TIME-7）
+        if (currentTapId != null) {
+            diag.tapAwaitNative(currentTapId);
+            diag.check();
         }
     }
 
@@ -428,11 +467,20 @@ public final class NativeMarkerManager {
         if (disposed) {
             return;
         }
-        if (v2) {
-            commit(selection.onMarkerTap(id, isSelectable(id)));
+        Integer tapId = diag.tapBegin(id); // c1：SDK 点击回调（仅诊断模式）
+        currentTapId = tapId;
+        try {
+            if (v2) {
+                commit(selection.onMarkerTap(id, isSelectable(id)));
+            }
+        } finally {
+            currentTapId = null;
         }
-        Map<String, Object> data = new HashMap<>(1);
+        Map<String, Object> data = new HashMap<>(2);
         data.put("markerId", id);
+        if (tapId != null) {
+            data.put("tapId", tapId); // 旧路径由 Dart 带回 markers#update（diagTapId）
+        }
         sink.emit("marker#onTap", data);
     }
 
@@ -453,6 +501,83 @@ public final class NativeMarkerManager {
         }
         if (options.containsKey("markerTransition")) {
             transition.configure(options.get("markerTransition"));
+        }
+        if (options.containsKey("markerDiagnostics")) {
+            diag.setEnabled(Boolean.TRUE.equals(options.get("markerDiagnostics")));
+        }
+    }
+
+    /** 标记方块由平台层提供（MarkersController 叠加在地图上的 View） */
+    public void setDiagnosticsSquare(Diagnostics.Square square) {
+        diag.setSquare(square);
+    }
+
+    /** diag#ping：返回 {nativeMs}；诊断未开启时返回 null，由调用方报错（§6.1） */
+    public Map<String, Object> diagPing() {
+        return disposed ? null : diag.ping();
+    }
+
+    /** diag#clearCaches：冷测试前清空合成位图缓存；诊断未开启返回 false */
+    public boolean diagClearCaches() {
+        if (disposed || !diag.enabled()) {
+            return false;
+        }
+        if (renderer != null) {
+            renderer.clearCaches();
+        }
+        return true;
+    }
+
+    /** 回执所需的渲染器状态；协议桩模式没有绘制与缓存 */
+    private final class DiagSource implements Diagnostics.Source {
+        @Override
+        public boolean settled(String id) {
+            return renderer == null || renderer.settled(id);
+        }
+
+        @Override
+        public boolean appearanceCurrent(String id) {
+            return renderer == null || renderer.appearanceCurrent(id);
+        }
+
+        @Override
+        public long draws() {
+            return renderer == null ? 0 : renderer.pipeline().draws;
+        }
+
+        @Override
+        public long cacheHits() {
+            return renderer == null ? 0 : renderer.pipeline().cacheHits;
+        }
+
+        @Override
+        public long cacheMisses() {
+            return renderer == null ? 0 : renderer.pipeline().cacheMisses;
+        }
+
+        @Override
+        public int pendingTasks() {
+            return renderer == null ? 0 : renderer.scheduler.tasks().size();
+        }
+
+        @Override
+        public long compositeBytes() {
+            return renderer == null ? 0 : renderer.cache.bytes();
+        }
+
+        @Override
+        public long decodedBytes() {
+            return renderer == null ? 0 : renderer.registry.decodedBytes();
+        }
+
+        @Override
+        public boolean compositeOverBudget() {
+            return renderer != null && renderer.cache.overBudget();
+        }
+
+        @Override
+        public boolean decodedOverBudget() {
+            return renderer != null && renderer.registry.decodedOverBudget();
         }
     }
 
