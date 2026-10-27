@@ -1,6 +1,9 @@
 // T-FIX-3：真机上连续切换 fromBytes 图标，每次截图供人工比对。
 // 运行：flutter drive --driver=test_driver/integration_test.dart \
 //   --target=integration_test/marker_bytes_icon_test.dart -d <设备 id>
+import 'dart:typed_data';
+import 'dart:ui' as ui;
+
 import 'package:amap_map_example/main.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -19,6 +22,37 @@ void main() {
     }
   }
 
+  // 地图区域一行像素的颜色种类数：瓦片加载后约 30～60，未加载（空白底色）只有个位数
+  Future<int> mapRowColors() async {
+    final List<int> png = await binding.takeScreenshot('map_probe');
+    final ui.Codec codec =
+        await ui.instantiateImageCodec(Uint8List.fromList(png));
+    final ui.Image image = (await codec.getNextFrame()).image;
+    final ByteData rgba =
+        (await image.toByteData(format: ui.ImageByteFormat.rawRgba))!;
+    final int y = image.height ~/ 4; // 屏幕上 1/4 处，位于地图内、避开标记
+    final Set<int> colors = <int>{};
+    for (int x = 0; x < image.width; x++) {
+      final int i = (y * image.width + x) * 4;
+      colors.add((rgba.getUint8(i) >> 4) << 8 |
+          (rgba.getUint8(i + 1) >> 4) << 4 |
+          rgba.getUint8(i + 2) >> 4);
+    }
+    image.dispose();
+    return colors.length;
+  }
+
+  // 最多等 30s；地图没加载出来就直接失败，避免拿空白截图做比较
+  Future<void> waitMapLoaded(WidgetTester tester) async {
+    int count = 0;
+    for (int i = 0; i < 15; i++) {
+      count = await mapRowColors();
+      if (count >= 15) return;
+      await settle(tester, 2000);
+    }
+    fail('地图未加载：地图区域只有 $count 种颜色（需 ≥15），本次截图比较无效');
+  }
+
   testWidgets('bytes 图标连续切换', (WidgetTester tester) async {
     await tester.pumpWidget(const AMapDemoApp());
     await settle(tester, 500);
@@ -26,7 +60,8 @@ void main() {
     // 首页 build 时完成 key 和隐私初始化，再进入“自定义图标”页
     final NavigatorState nav = tester.state(find.byType(Navigator));
     nav.pushNamed('/marker-icon');
-    await settle(tester, 4000);
+    await settle(tester, 2000);
+    await waitMapLoaded(tester);
     await binding.takeScreenshot('t_fix3_0_initial_asset');
 
     final Finder toggle = find.text('切换 bytes 图标');
