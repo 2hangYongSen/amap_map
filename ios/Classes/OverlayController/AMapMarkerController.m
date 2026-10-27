@@ -42,6 +42,9 @@
             }
             result([weakSelf attach]);
         }];
+        [_methodChannel addMethodName:@"markers#setSelected" withHandler:^(FlutterMethodCall * _Nonnull call, FlutterResult  _Nonnull result) {
+            result([weakSelf setSelectedFromArgs:call.arguments]);
+        }];
         [_methodChannel addMethodName:@"markers#resync" withHandler:^(FlutterMethodCall * _Nonnull call, FlutterResult  _Nonnull result) {
             result([weakSelf nativeResync:call.arguments]);
         }];
@@ -147,6 +150,8 @@
   if (!marker) {
     return NO;
   }
+  // R-SEL-3：先提交选择并发 selectionChanged，再发 marker#onTap（旧协议下无操作，R-SEL-9）
+  [self selectionOnMarkerTap:markerId];
   [_methodChannel invokeMethod:@"marker#onTap" arguments:@{@"markerId" : markerId}];
   return YES;
 }

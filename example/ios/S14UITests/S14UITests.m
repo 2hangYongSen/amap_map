@@ -62,4 +62,105 @@
   XCTAssertTrue([deadline timeIntervalSinceNow] > 0, @"实验超时");
 }
 
+// ---- S16：选择示例页真实点击（SDK → AMapViewController → 插件 → 通道 → Dart 页面日志） ----
+
+- (NSString *)logOf:(XCUIApplication *)app {
+  NSPredicate *p = [NSPredicate predicateWithFormat:@"label CONTAINS 'onTap' OR label CONTAINS '选择 ' OR label CONTAINS '点击价格'"];
+  XCUIElement *e = [[app descendantsMatchingType:XCUIElementTypeAny] matchingPredicate:p].firstMatch;
+  return e.exists ? e.label : @"(none)";
+}
+
+// 点击后等日志变化（点击回调约 352ms，E-I2）
+- (NSString *)tap:(XCUICoordinate *)c app:(XCUIApplication *)app name:(NSString *)name {
+  NSString *before = [self logOf:app];
+  [c tap];
+  for (int i = 0; i < 30 && [[self logOf:app] isEqualToString:before]; i++) [NSThread sleepForTimeInterval:0.1];
+  [NSThread sleepForTimeInterval:0.3];
+  NSString *log = [self logOf:app];
+  NSLog(@"S16UI %@ → %@", name, [log stringByReplacingOccurrencesOfString:@"\n" withString:@" | "]);
+  XCTAttachment *a = [XCTAttachment attachmentWithScreenshot:XCUIScreen.mainScreen.screenshot];
+  a.name = [@"S16_" stringByAppendingString:name];
+  a.lifetime = XCTAttachmentLifetimeKeepAlways;
+  [self addAttachment:a];
+  return log;
+}
+
+- (XCUICoordinate *)at:(XCUIApplication *)app point:(CGPoint)p {
+  return [[app coordinateWithNormalizedOffset:CGVectorMake(0, 0)] coordinateWithOffset:CGVectorMake(p.x, p.y)];
+}
+
+static CGPoint Mid(CGRect r) { return CGPointMake(CGRectGetMidX(r), CGRectGetMidY(r)); }
+
+- (void)testSelectionPage {
+  XCUIApplication *app = [XCUIApplication new];
+  [app launch];
+  // Flutter 把 ListTile 的标题与副标题合成一个标签，按包含匹配，元素类型不限
+  XCUIElement *entry = [[app descendantsMatchingType:XCUIElementTypeAny]
+                           matchingPredicate:[NSPredicate predicateWithFormat:@"label CONTAINS 'AM-E50.7'"]].firstMatch;
+  // Flutter 的无障碍树在首次查询后才生成，等待期间反复取快照
+  BOOL listed = NO;
+  // 列表懒加载：等首页出现，再上滑直到条目可点
+  [[[app descendantsMatchingType:XCUIElementTypeAny]
+       matchingPredicate:[NSPredicate predicateWithFormat:@"label CONTAINS 'AM-D01'"]].firstMatch
+      waitForExistenceWithTimeout:20];
+  for (int i = 0; i < 15 && !listed; i++) {
+    listed = entry.exists && entry.frame.size.height > 0 && CGRectGetMaxY(entry.frame) < 700;
+    if (!listed) [[self at:app point:CGPointMake(187, 600)] pressForDuration:0.05
+                                               thenDragToCoordinate:[self at:app point:CGPointMake(187, 350)]];
+    [NSThread sleepForTimeInterval:0.6];
+  }
+  if (!listed) NSLog(@"S16UI tree %@", app.debugDescription);
+  XCTAssertTrue(listed, @"列表中没有选择示例");
+  [NSThread sleepForTimeInterval:2];  // 等首页布局稳定，避免点到过期的无障碍坐标
+  XCUIElement *pageButton = [[app descendantsMatchingType:XCUIElementTypeAny]
+                                matchingPredicate:[NSPredicate predicateWithFormat:@"label == '选中 p2'"]].firstMatch;
+  for (int i = 0; i < 3 && !pageButton.exists; i++) {
+    [[self at:app point:Mid(entry.frame)] tap];
+    [pageButton waitForExistenceWithTimeout:5];
+  }
+  XCTAssertTrue(pageButton.exists, @"没有进入选择示例页");
+  // 点位 View 带按钮 trait，按标签匹配、类型不限
+  XCUIElement *(^byLabel)(NSString *) = ^XCUIElement *(NSString *l) {
+    return [[app descendantsMatchingType:XCUIElementTypeAny]
+               matchingPredicate:[NSPredicate predicateWithFormat:@"label == %@", l]].firstMatch;
+  };
+  XCUIElement *p1 = byLabel(@"¥3000"), *p2 = byLabel(@"¥5200"), *p3 = byLabel(@"¥4100");
+  BOOL found = [p3 waitForExistenceWithTimeout:20];
+  if (!found) NSLog(@"S16UI tree %@", app.debugDescription);
+  XCTAssertTrue(found, @"原生点位文字不可见（无障碍树中没有）");
+  [NSThread sleepForTimeInterval:2];
+  CGPoint c1 = Mid(p1.frame), c2 = Mid(p2.frame), c3 = Mid(p3.frame);
+  CGPoint overlap = CGPointMake((c1.x + c3.x) / 2, (c1.y + c3.y) / 2);  // p1、p3 气泡重叠处
+  NSLog(@"S16UI frames p1=%@ p2=%@ p3=%@", NSStringFromCGRect(p1.frame), NSStringFromCGRect(p2.frame),
+        NSStringFromCGRect(p3.frame));
+
+  // 1. 点 p2：先选择事件、后 onTap（R-SEL-3）
+  NSString *log = [self tap:[self at:app point:c2] app:app name:@"1_p2"];
+  XCTAssertTrue([log containsString:@"→ p2（markerTap"] && [log hasSuffix:@"onTap p2"], @"%@", log);
+  // 2. 再点 p2：落在高层 View 上，映射回 p2（R-TOP-5），重复点击取消
+  log = [self tap:[self at:app point:c2] app:app name:@"2_p2_retap"];
+  XCTAssertTrue([log containsString:@"p2 → null（retap"], @"%@", log);
+  // 3. 点重叠处：选中当前在上面的那个（T）
+  log = [self tap:[self at:app point:overlap] app:app name:@"3_overlap"];
+  NSString *top = [log containsString:@"→ p1（"] ? @"p1" : [log containsString:@"→ p3（"] ? @"p3" : nil;
+  XCTAssertNotNil(top, @"%@", log);
+  NSString *other = [top isEqualToString:@"p1"] ? @"p3" : @"p1";
+  // 4. 地图空白处取消（mapTap）
+  CGPoint blank = CGPointMake(c1.x - 120, c1.y + 80);  // p1 左下方空白
+  // 宏参数按逗号切分，方括号不保护逗号：期望串先算好
+  NSString *want = [NSString stringWithFormat:@"%@ → null（mapTap", top];
+  log = [self tap:[self at:app point:blank] app:app name:@"4_blank"];
+  XCTAssertTrue([log containsString:want], @"%@", log);
+  // 5. 点被压住那个（O）露出的一侧把它选中
+  CGPoint co = [other isEqualToString:@"p1"] ? CGPointMake(c1.x - (c3.x - c1.x), c1.y + (c1.y - c3.y))
+                                             : CGPointMake(c3.x + (c3.x - c1.x), c3.y - (c1.y - c3.y));
+  want = [NSString stringWithFormat:@"→ %@（markerTap", other];
+  log = [self tap:[self at:app point:co] app:app name:@"5_other"];
+  XCTAssertTrue([log containsString:want], @"%@", log);
+  // 6. 再点重叠处：选中的 O 已经置顶，点击落在 O 上（retap），不是原来在上面的 T
+  want = [NSString stringWithFormat:@"%@ → null（retap", other];
+  log = [self tap:[self at:app point:overlap] app:app name:@"6_overlap_after"];
+  XCTAssertTrue([log containsString:want], @"选中点没有置顶：%@", log);
+}
+
 @end

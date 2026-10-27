@@ -32,6 +32,10 @@ Future<void> main() {
       if (name == 's15_image_repaired') {
         return !_same(bytes, shots['s15_image_broken']);
       }
+      // S16：选中 p2 后画面必须变化（红底白字、置顶）
+      if (name == 's16_sel_1_p2') {
+        return !_same(bytes, shots['s16_sel_0_normal']);
+      }
       return true;
     },
   );

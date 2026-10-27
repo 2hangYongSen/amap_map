@@ -9,11 +9,13 @@
 /* Begin PBXBuildFile section */
 		1498D2341E8E89220040F4C2 /* GeneratedPluginRegistrant.m in Sources */ = {isa = PBXBuildFile; fileRef = 1498D2331E8E89220040F4C2 /* GeneratedPluginRegistrant.m */; };
 		208A02F28ABAA75EEA19F912 /* S14ExpZ.m in Sources */ = {isa = PBXBuildFile; fileRef = 0221C63B6F6B8A25AE1776B2 /* S14ExpZ.m */; };
+		20D7B26E00147EADB5ECCA6F /* NativeSelectionTests.m in Sources */ = {isa = PBXBuildFile; fileRef = 9EAED6B7BEFFF6DB9C86F3F9 /* NativeSelectionTests.m */; };
 		32476F219162F8706AB4BD34 /* S14ExpPerf.m in Sources */ = {isa = PBXBuildFile; fileRef = 4ACEACE664292A5AAD6C11C0 /* S14ExpPerf.m */; };
 		3B3967161E833CAA004F5970 /* AppFrameworkInfo.plist in Resources */ = {isa = PBXBuildFile; fileRef = 3B3967151E833CAA004F5970 /* AppFrameworkInfo.plist */; };
 		4FE381A25140AD16EC349039 /* NativeMarkerControllerTests.m in Sources */ = {isa = PBXBuildFile; fileRef = 8DEC9B072AB76653B06FDFA9 /* NativeMarkerControllerTests.m */; };
 		62D4D814D2089F28E48B6D0A /* S14ExpHost.m in Sources */ = {isa = PBXBuildFile; fileRef = 396A938791B71E7F7A4A7F1C /* S14ExpHost.m */; };
 		63301BAE84CFC52DB8DA7340 /* Foundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 98AC6A8BCF3B2CBF569C030B /* Foundation.framework */; };
+		679B4EAC8BF63CE30522790A /* S16ExpTop.m in Sources */ = {isa = PBXBuildFile; fileRef = AF65EE1F53C6DD62EB34B6AE /* S16ExpTop.m */; };
 		7B562A95906BF25B6E57D6C0 /* S14Support.m in Sources */ = {isa = PBXBuildFile; fileRef = BCB61B07F06DF09965F6936C /* S14Support.m */; };
 		85821A6C69833D4558D95741 /* Foundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 98AC6A8BCF3B2CBF569C030B /* Foundation.framework */; };
 		96B67FA302A74F25F1C54ABA /* NativeMarkerFixtureTests.m in Sources */ = {isa = PBXBuildFile; fileRef = 1AA192A31F3D281FAFA03964 /* NativeMarkerFixtureTests.m */; };
@@ -90,6 +92,8 @@
 		97C147001CF9000F007C117D /* Base */ = {isa = PBXFileReference; lastKnownFileType = file.storyboard; name = Base; path = Base.lproj/LaunchScreen.storyboard; sourceTree = "<group>"; };
 		97C147021CF9000F007C117D /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		98AC6A8BCF3B2CBF569C030B /* Foundation.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Foundation.framework; path = Platforms/iPhoneOS.platform/Developer/SDKs/iPhoneOS18.0.sdk/System/Library/Frameworks/Foundation.framework; sourceTree = DEVELOPER_DIR; };
+		9EAED6B7BEFFF6DB9C86F3F9 /* NativeSelectionTests.m */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.c.objc; path = NativeSelectionTests.m; sourceTree = "<group>"; };
+		AF65EE1F53C6DD62EB34B6AE /* S16ExpTop.m */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.c.objc; path = S16ExpTop.m; sourceTree = "<group>"; };
 		B68CA7FA7DB1590B592B91E2 /* Pods-Runner.debug.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-Runner.debug.xcconfig"; path = "Target Support Files/Pods-Runner/Pods-Runner.debug.xcconfig"; sourceTree = "<group>"; };
 		BCB61B07F06DF09965F6936C /* S14Support.m */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.c.objc; path = S14Support.m; sourceTree = "<group>"; };
 		BF537B12B1F54203F722B26D /* AMapLegacyFixTests.m */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.c.objc; path = AMapLegacyFixTests.m; sourceTree = "<group>"; };
@@ -132,6 +136,7 @@
 				BF537B12B1F54203F722B26D /* AMapLegacyFixTests.m */,
 				1AA192A31F3D281FAFA03964 /* NativeMarkerFixtureTests.m */,
 				8DEC9B072AB76653B06FDFA9 /* NativeMarkerControllerTests.m */,
+				9EAED6B7BEFFF6DB9C86F3F9 /* NativeSelectionTests.m */,
 			);
 			name = RunnerTests;
 			path = RunnerTests;
@@ -146,6 +151,7 @@
 				7DB45227EDE1873AF52DA71C /* S14ExpTop.m */,
 				0221C63B6F6B8A25AE1776B2 /* S14ExpZ.m */,
 				BCB61B07F06DF09965F6936C /* S14Support.m */,
+				AF65EE1F53C6DD62EB34B6AE /* S16ExpTop.m */,
 			);
 			name = Experiments;
 			path = Experiments;
@@ -485,6 +491,7 @@
 				E733F4EE8FA6CDE9691EC124 /* AMapLegacyFixTests.m in Sources */,
 				96B67FA302A74F25F1C54ABA /* NativeMarkerFixtureTests.m in Sources */,
 				4FE381A25140AD16EC349039 /* NativeMarkerControllerTests.m in Sources */,
+				20D7B26E00147EADB5ECCA6F /* NativeSelectionTests.m in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -500,6 +507,7 @@
 				BCA6F7C55DA88D6B80197544 /* S14ExpTop.m in Sources */,
 				208A02F28ABAA75EEA19F912 /* S14ExpZ.m in Sources */,
 				7B562A95906BF25B6E57D6C0 /* S14Support.m in Sources */,
+				679B4EAC8BF63CE30522790A /* S16ExpTop.m in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

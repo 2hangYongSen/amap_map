@@ -100,9 +100,10 @@ class _NativeMarkerSelectionPageState extends State<NativeMarkerSelectionPage> {
     };
   }
 
+  /// 保留最近两行，能看出 selectionChanged 先于 onTap（R-SEL-3）
   void _note(String s) {
     if (mounted) {
-      setState(() => _log = s);
+      setState(() => _log = '${_log.split('\n').last}\n$s');
     }
   }
 

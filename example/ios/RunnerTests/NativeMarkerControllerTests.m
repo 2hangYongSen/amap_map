@@ -330,6 +330,9 @@ static NSDictionary *Asset(NSString *id_) {
     XCTAssertTrue(v.hidden);
     XCTAssertFalse(v.enabled);
     XCTAssertEqualObjects(v.reuseIdentifier, AMapFlutterNativeMarkerViewIdentifier);
+    XCTAssertTrue(v.isAccessibilityElement);
+    XCTAssertEqualObjects(v.accessibilityLabel, @"x");
+    XCTAssertFalse(v.accessibilityTraits & UIAccessibilityTraitButton, @"clickable = NO 不标按钮");
     // 带阴影的形状必须有 shadowPath（E-I3）
     NSMutableDictionary *p = [Shape(@"s") mutableCopy];
     NSMutableDictionary *st = [p[@"style"] mutableCopy];

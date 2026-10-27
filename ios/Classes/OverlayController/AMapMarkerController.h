@@ -83,4 +83,27 @@ NS_ASSUME_NONNULL_BEGIN
 
 @end
 
+@class AMapSelectionAnnotation;
+
+/// 原生单选（§11）与选中置顶（§10.2），实现在 AMapMarkerController+Selection.m
+@interface AMapMarkerController (Selection)
+
+/// markers#setSelected：返回 {revision}；id 相同不发事件（R-SEL-4）
+- (NSDictionary *)setSelectedFromArgs:(nullable id)args;
+
+/// 地图空白处单击（didSingleTappedAtCoordinate:）
+- (void)onMapTap;
+
+/// map#update.options / 创建参数中的 markerSelection、markerTransition
+- (void)applyMarkerOptions:(nullable id)options;
+
+/// 高层 Annotation 的 View（viewForAnnotation:）；已过期的返回 nil
+- (nullable MAAnnotationView *)nativeViewForSelectionAnnotation:(AMapSelectionAnnotation *)annotation
+                                                        mapView:(nullable MAMapView *)mapView;
+
+/// didAddAnnotationViews: 中再绑定一次（R-IOS-2）
+- (void)rebindSelectionView:(AMapNativeMarkerView *)view;
+
+@end
+
 NS_ASSUME_NONNULL_END

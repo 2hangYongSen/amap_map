@@ -8,8 +8,11 @@
 #import "AMapMarkerController.h"
 #import "AMapNativeMarkerLayout.h"
 #import "AMapImageRegistry.h"
+#import "AMapSelectionState.h"
+#import "AMapSelectionAnnotation.h"
 
 @class AMapMarker;
+@class AMapNativeMarkerView;
 
 NS_ASSUME_NONNULL_BEGIN
 
@@ -38,6 +41,30 @@ NS_ASSUME_NONNULL_BEGIN
 @property (nonatomic, strong, readwrite) AMapImageRegistry *registry;
 @property (nonatomic, strong, readwrite) AMapNativeEventLog *events;
 
+// ---- S16 选择与置顶（+Selection.m） ----
+@property (nonatomic, strong) AMapSelectionState *selection;
+/// 当前高层 Annotation（§10.2），最多一个
+@property (nonatomic, strong, nullable) AMapSelectionAnnotation *topAnnotation;
+/// 高层 View（弱引用）；mapView 为 nil 的测试中也能找到它
+@property (nonatomic, weak, nullable) AMapNativeMarkerView *topView;
+/// markerTransition.mode == replaceWhenReady；iOS 删除仍在本次调用完成，只多发 markers#removed（R-DEL-6）
+@property (nonatomic, assign) BOOL replaceTransition;
+
+@end
+
+/// +Native.m 中实现、供 +Selection.m 使用的内部方法
+@interface AMapMarkerController (NativeInternal)
+- (NSHashTable<AMapNativeMarkerView *> *)boundViews;
+- (void)refreshViewsOf:(AMapMarker *)m;
+@end
+
+/// +Selection.m 中实现、供 +Native.m 与旧路径使用的内部方法
+@interface AMapMarkerController (SelectionInternal)
+- (void)commitSelection:(nullable AMapSelectionChange *)change;
+- (void)syncTopAnnotation;
+- (void)selectionOnMarkerTap:(NSString *)markerId;
+- (void)emitRemoved:(NSArray<NSString *> *)ids syncId:(NSInteger)syncId;
+- (void)applyTopRules:(AMapNativeMarkerView *)view marker:(AMapMarker *)marker isTop:(BOOL)isTop;
 @end
 
 NS_ASSUME_NONNULL_END
