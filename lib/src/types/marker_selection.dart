@@ -120,6 +120,10 @@ final class MarkerTransition {
   ///
   /// [timeout] 须大于 0 且不超过 5 秒，由校验器检查。
   /// Android 实测建议取 1000ms（200 点就绪 P95 约 120ms，500 点约 520ms）。
+  ///
+  /// [timeout] 只对 Android 生效。iOS 上新点在本次更新中同步显示，替换本身不会
+  /// 清屏（实验 E-I4），因此直接删除旧点，不等待 [timeout]；被删除的点仍按
+  /// `replaceWhenReady` 的规则通知 Dart 释放回调，行为与 Android 保持一致。
   const MarkerTransition.replaceWhenReady({required Duration this.timeout})
       : replaceWhenReadyEnabled = true;
 

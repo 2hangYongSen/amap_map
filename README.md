@@ -252,6 +252,8 @@ markerTransition: const MarkerTransition.replaceWhenReady(
 
 只删除、不新增的更新（例如清空筛选）仍立即删除。
 
+`timeout` 只对 Android 生效。iOS 上新点在本次更新中同步显示，替换不会缺点，所以直接删除旧点，不等待超时。
+
 #### 字重（Android）
 
 `fontWeight` 只允许 w400 / w500 / w600 / w700。Android API 28 及以上按精确字重绘制；低于 API 28 时系统字体只有常规和粗体两档：w400、w500 显示为常规，w600、w700 显示为粗体。
