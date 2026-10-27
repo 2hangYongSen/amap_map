@@ -28,6 +28,10 @@ Future<void> main() {
       if (name == 't_fix3_3_bytes_start') {
         return !_same(bytes, shots['t_fix3_2_bytes_end']);
       }
+      // S15：点“修复资源”后损坏点换成九宫格气泡，画面必须变化
+      if (name == 's15_image_repaired') {
+        return !_same(bytes, shots['s15_image_broken']);
+      }
       return true;
     },
   );
