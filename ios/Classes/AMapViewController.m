@@ -11,6 +11,8 @@
 #import "MAMapView+Flutter.h"
 #import "MAAnnotationView+Flutter.h"
 #import "AMapMarkerController.h"
+#import "AMapMarker.h"
+#import "AMapNativeMarkerView.h"
 #import "MAPointAnnotation+Flutter.h"
 #import "AMapPolylineController.h"
 #import "MAPolyline+Flutter.h"
@@ -107,7 +109,10 @@
                                                           mapView:_mapView
                                                         registrar:registrar];
         id markersToAdd = args[@"markersToAdd"];
-        if ([markersToAdd isKindOfClass:[NSArray class]]) {
+        if ([AMapMarkerController isV2Payload:args]) {
+            // 新协议创建参数：资源先于点位登记，拒绝结果由 markers#attach 返回（R-SYNC-4）
+            [_markerController applyCreationParams:args];
+        } else if ([markersToAdd isKindOfClass:[NSArray class]]) {
             [_markerController addMarkers:markersToAdd];
         }
         id polylinesToAdd = args[@"polylinesToAdd"];
@@ -132,6 +137,8 @@
     if (MAMapRectIsEmpty(_initLimitMapRect) == NO) {//避免没有开始渲染，frame监听还存在时，快速销毁
         [_mapView removeObserver:self forKeyPath:@"frame"];
     }
+    // 销毁后迟到的解码结果不再发事件、不再改视图（§6.6）
+    [_markerController dispose];
 }
 
 - (void)updatePrivacyStateWithDict:(NSDictionary *)dict {
@@ -336,6 +343,10 @@
         return nil;
     }
     AMapMarker *marker = [_markerController markerForId:fAnno.markerId];
+    if (marker.isNative) {
+        // 原生点位用独立复用标识，与旧路径 View 不互相复用（§10.1）
+        return [_markerController nativeViewForMarker:marker mapView:mapView];
+    }
     //    TODO: 这里只实现基础AnnotationView，不再根据marker的数据差异，区分是annotationView还是pinAnnotationView了；
     MAAnnotationView *view = [mapView dequeueReusableAnnotationViewWithIdentifier:AMapFlutterAnnotationViewIdentifier];
     if (view == nil) {
@@ -361,6 +372,13 @@
             continue;
         }
         AMapMarker *marker = [_markerController markerForId:fAnno.markerId];
+        if ([view isKindOfClass:[AMapNativeMarkerView class]]) {
+            // 再绑定一次：zIndex 在这里设置同样有效（R-IOS-2）
+            if (marker.isNative) {
+                [_markerController bindNativeView:(AMapNativeMarkerView *)view marker:marker];
+            }
+            continue;
+        }
         [view updateViewWithMarker:marker];
     }
 }

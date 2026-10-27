@@ -58,6 +58,21 @@
     }
 }
 
+- (BOOL)isNative {
+    return [self.renderMode isEqualToString:@"native"];
+}
+
+- (void)replaceWithMarker:(AMapMarker *)changedMarker {
+    self.renderMode = changedMarker.renderMode;
+    self.selectable = changedMarker.selectable;
+    self.selectedZIndex = changedMarker.selectedZIndex;
+    self.presentation = changedMarker.presentation;
+    self.spec = changedMarker.spec;
+    self.generation = changedMarker.generation;
+    self.heldImageIds = changedMarker.heldImageIds;
+    [self updateMarker:changedMarker];
+}
+
 - (void)_updateAnnotation {
     _annotation.title = self.infoWindow.title;
     _annotation.subtitle = self.infoWindow.snippet;
