@@ -128,6 +128,14 @@ class AMapWidget extends StatefulWidget {
   /// 集合替换的过渡策略，默认立即删除（与 1.0.15 一致）
   final MarkerTransition markerTransition;
 
+  /// 诊断回执（§13）：每次点位请求的原生 t2→t4、绘制与缓存统计。
+  /// 与 [onMarkerTapApplied] 任一非空即开启诊断（同时启用新协议）；
+  /// 都为空时原生不发送回执、不显示标记方块。只用于性能测量，不要在业务页面常开。
+  final ValueChanged<MarkerUpdateReport>? onMarkerUpdateApplied;
+
+  /// 诊断点击计时（§13 R-TIME-7）：原生同一时钟上的 c1（点击回调）→ c2（外观提交）
+  final ValueChanged<MarkerTapReport>? onMarkerTapApplied;
+
   /// 创建一个展示高德地图的widget
   ///
   /// 在app首次启动时必须传入高德合规声明配置[privacyStatement],后续如果没有变化不需要重复设置
@@ -178,7 +186,9 @@ class AMapWidget extends StatefulWidget {
       this.onNativeMarkerError,
       this.markerSelection,
       this.onMarkerSelectionChanged,
-      this.markerTransition = const MarkerTransition.immediate()});
+      this.markerTransition = const MarkerTransition.immediate(),
+      this.onMarkerUpdateApplied,
+      this.onMarkerTapApplied});
 
   ///
   @override
@@ -361,6 +371,8 @@ class _MapState extends State<AMapWidget> {
   MarkerSyncOptions _markerOptions() => MarkerSyncOptions(
         selection: widget.markerSelection,
         transition: widget.markerTransition,
+        diagnostics: widget.onMarkerUpdateApplied != null ||
+            widget.onMarkerTapApplied != null,
       );
 
   /// 回调总是读取最新的 widget；队列销毁后不会再调用（R-DART-DISP）
@@ -370,6 +382,9 @@ class _MapState extends State<AMapWidget> {
             widget.onNativeMarkerError?.call(e),
         onSelectionChanged: (MarkerSelectionChange c) =>
             widget.onMarkerSelectionChanged?.call(c),
+        onUpdateApplied: (MarkerUpdateReport r) =>
+            widget.onMarkerUpdateApplied?.call(r),
+        onTapApplied: (MarkerTapReport r) => widget.onMarkerTapApplied?.call(r),
       );
 
   /// 初始点位校验失败时上报，并先按空集合创建，后续合法更新照常发送

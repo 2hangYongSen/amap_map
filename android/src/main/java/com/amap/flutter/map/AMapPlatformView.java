@@ -15,6 +15,7 @@ import com.amap.api.maps.TextureMapView;
 import com.amap.flutter.map.core.MapController;
 import com.amap.flutter.map.core.MapsInitializerController;
 import com.amap.flutter.map.overlays.marker.MarkersController;
+import com.amap.flutter.map.overlays.marker.nativemarker.platform.AndroidDiagSquare;
 import com.amap.flutter.map.overlays.polygon.PolygonsController;
 import com.amap.flutter.map.overlays.polyline.PolylinesController;
 import com.amap.flutter.map.utils.Const;
@@ -71,6 +72,7 @@ public class AMapPlatformView
             mapsInitializerController = new MapsInitializerController(methodChannel);
             mapController = new MapController(methodChannel, mapView);
             markersController = new MarkersController(methodChannel, amap, context);
+            markersController.setDiagnosticsSquare(new AndroidDiagSquare(mapView));
             polylinesController = new PolylinesController(methodChannel, amap);
             polygonsController = new PolygonsController(methodChannel, amap);
             initMyMethodCallHandlerMap();

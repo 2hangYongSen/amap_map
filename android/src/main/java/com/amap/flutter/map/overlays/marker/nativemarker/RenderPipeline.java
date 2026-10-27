@@ -29,6 +29,10 @@ final class RenderPipeline implements RenderScheduler.Callback, FrameApplier.Sin
     private Listener listener;
     private final SelectionState selection;
     boolean disposed = false;
+    /** 诊断计数（R-TIME-4）：完成的绘制次数、ensure 时缓存命中 / 未命中次数 */
+    long draws = 0;
+    long cacheHits = 0;
+    long cacheMisses = 0;
 
     RenderPipeline(PointTable points, RenderCache cache, RenderScheduler scheduler,
                    FrameApplier applier, MarkerHost host, IconFactory icons,
@@ -73,6 +77,11 @@ final class RenderPipeline implements RenderScheduler.Callback, FrameApplier.Sin
     private void ensure(PointTable.Entry e, boolean sel, int priority) {
         String key = sel ? e.selectedKey : e.normalKey;
         RenderCache.Entry c = cache.get(key);
+        if (c != null) {
+            cacheHits++;
+        } else {
+            cacheMisses++;
+        }
         if (c != null) {
             if (appliesRole(e, sel)) {
                 enqueueApply(e, sel, c);
@@ -140,6 +149,7 @@ final class RenderPipeline implements RenderScheduler.Callback, FrameApplier.Sin
         }
         RenderCache.Entry c = null;
         if (result != null) {
+            draws++;
             try {
                 // fromBitmap 在 toDescriptor 内部，失败时它已在 finally 中回收合成位图
                 c = cache.put(t.key, result.bitmap, result.anchorU, result.anchorV);

@@ -1,5 +1,6 @@
 import 'package:flutter/foundation.dart' show immutable;
 
+import '../types/marker_diagnostics.dart';
 import '../types/marker_selection.dart';
 
 /// 走发送队列的点位相关地图选项。
@@ -11,6 +12,7 @@ class MarkerSyncOptions {
   const MarkerSyncOptions({
     this.selection,
     this.transition = const MarkerTransition.immediate(),
+    this.diagnostics = false,
   });
 
   /// 原生单选配置，为空表示关闭
@@ -19,9 +21,12 @@ class MarkerSyncOptions {
   /// 集合替换过渡策略
   final MarkerTransition transition;
 
+  /// 诊断模式（§13）：原生发送回执、显示标记方块、关联 tapId
+  final bool diagnostics;
+
   /// 非默认值即需要新协议（R-PROTO-0）
   bool get needsProtocolV2 =>
-      selection != null || transition.replaceWhenReadyEnabled;
+      selection != null || transition.replaceWhenReadyEnabled || diagnostics;
 
   /// `map#update.options` 与创建参数中的键
   Map<String, dynamic> toMap() {
@@ -39,6 +44,7 @@ class MarkerSyncOptions {
             : 'immediate',
         'timeoutMs': transition.timeout?.inMilliseconds,
       },
+      'markerDiagnostics': diagnostics,
     };
   }
 
@@ -47,15 +53,27 @@ class MarkerSyncOptions {
       identical(this, other) ||
       other is MarkerSyncOptions &&
           selection == other.selection &&
-          transition == other.transition;
+          transition == other.transition &&
+          diagnostics == other.diagnostics;
 
   @override
-  int get hashCode => Object.hash(selection, transition);
+  int get hashCode => Object.hash(selection, transition, diagnostics);
 }
 
 /// 队列向上层（`_MapState`）交付的事件，全部可选。
 class MarkerSyncCallbacks {
-  const MarkerSyncCallbacks({this.onNativeError, this.onSelectionChanged});
+  const MarkerSyncCallbacks({
+    this.onNativeError,
+    this.onSelectionChanged,
+    this.onUpdateApplied,
+    this.onTapApplied,
+  });
+
+  /// `markers#applied` 诊断回执，已补上 Dart 端 t1 与返回时刻
+  final void Function(MarkerUpdateReport report)? onUpdateApplied;
+
+  /// `markers#tapApplied` 点击计时（c1、c2）
+  final void Function(MarkerTapReport report)? onTapApplied;
 
   /// `marker#nativeError`，已按 eventSeq 去重（R-INIT-5）
   final void Function(NativeMarkerError error)? onNativeError;

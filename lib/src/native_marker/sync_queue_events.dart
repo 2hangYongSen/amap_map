@@ -59,6 +59,23 @@ extension _MarkerSyncEvents on MarkerSyncQueue {
           _selectionRevision = change.revision;
           callbacks.onSelectionChanged?.call(change);
         }
+      // 诊断事件只在诊断已确认开启时交付；关闭后迟到的丢弃
+      case 'markers#applied':
+        if (_diagOn) {
+          _deliverReport(_diag.applied(m.args));
+        }
+      case 'markers#tapApplied':
+        final MarkerTapReport? tap = markerTapReportFromMap(m.args);
+        if (_diagOn && tap != null) {
+          callbacks.onTapApplied?.call(tap);
+        }
+      case 'marker#onTap':
+        // 诊断模式下的 tapId，等该点的下一次更新带回原生（R-TIME-7）
+        final Object? id = m.args['markerId'];
+        final Object? tapId = m.args['tapId'];
+        if (_diagOn && id is String && tapId is num) {
+          _diag.tapped(id, tapId.toInt());
+        }
       case 'markers#removed':
         final List<Object?> ids =
             m.args['markerIds'] as List<Object?>? ?? <Object?>[];
@@ -146,6 +163,7 @@ extension _MarkerSyncEvents on MarkerSyncQueue {
     _retryTimer?.cancel();
     _retryTimer = null;
     _imageSync.dispose();
+    _diag.clear();
     _failCommands(MarkerSyncException('地图已销毁'));
     _buffer.clear();
     _retiring.clear();

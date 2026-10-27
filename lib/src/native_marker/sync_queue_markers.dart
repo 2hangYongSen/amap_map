@@ -103,6 +103,16 @@ extension _MarkerSyncMarkers on MarkerSyncQueue {
     final int syncId = ++_syncId;
     final bool immediate =
         !_confirmedOptions.transition.replaceWhenReadyEnabled;
+    final Map<String, dynamic> payload = diff.toV2Payload(syncId);
+    if (_diagOn) {
+      // 旧路径点击计时：把 tapId 带回紧接着的那次更新（R-TIME-7）
+      final Map<String, Object?>? tap =
+          _diag.takeTapFor(<String>[...diff.changes.keys, ...diff.adds.keys]);
+      if (tap != null) {
+        payload['diagTapId'] = tap;
+      }
+      _diag.sent(syncId); // t1
+    }
     // 在途期间保留新增与释放的资源副本（R-RES-14）
     _inFlightImages = <String, MarkerImageResource>{
       ...diff.imagesToAdd,
@@ -112,11 +122,11 @@ extension _MarkerSyncMarkers on MarkerSyncQueue {
     _imageSync.markSent(diff.imagesToAdd.keys);
     _retiring.assignSyncId(diff.removes, syncId);
     try {
-      final Map<Object?, Object?>? result =
-          await t.update(diff.toV2Payload(syncId));
+      final Map<Object?, Object?>? result = await t.update(payload);
       if (_disposed) {
         return;
       }
+      _deliverReport(_diag.returned(syncId));
       if (result?['accepted'] != true) {
         _needsResync = true;
         return;
@@ -193,12 +203,16 @@ extension _MarkerSyncMarkers on MarkerSyncQueue {
     _inFlightImages = Map<String, MarkerImageResource>.of(snapshot.images);
     // resync 重新登记全部资源，失败的资源也获得一次重新解码
     _imageSync.markSent(snapshot.images.keys);
+    if (_diagOn) {
+      _diag.sent(syncId);
+    }
     try {
       final Map<Object?, Object?>? result =
           await t.resync(snapshot.toPayload(syncId));
       if (_disposed) {
         return;
       }
+      _deliverReport(_diag.returned(syncId));
       if (result?['accepted'] != true) {
         throw MarkerSyncException('resync 未被接受');
       }

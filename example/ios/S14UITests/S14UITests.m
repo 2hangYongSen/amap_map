@@ -62,6 +62,40 @@
   XCTAssertTrue([deadline timeIntervalSinceNow] > 0, @"实验超时");
 }
 
+// ---- S17：点击计时。App 以 integration_test/native_marker_tap_diag_test.dart 为入口，
+// 测试绑定下 Flutter 语义不进无障碍树，这里按固定顺序点原生点位视图（n1 = 带 ¥3000 标签，l1 = 图片点）。
+// 判定由 Dart 写到 App tmp/s17_result.txt，s17_ios_run.sh 取回 ----
+
+- (void)testS17Taps {
+  XCUIApplication *app = [XCUIApplication new];
+  [app launch];
+  XCUIElementQuery *views = [[app descendantsMatchingType:XCUIElementTypeAny]
+      matchingIdentifier:@"maannotationview"];
+  XCUIElement *n1 = [views matchingPredicate:[NSPredicate predicateWithFormat:@"label == '¥3000'"]].firstMatch;
+  XCUIElement *l1 = [views matchingPredicate:[NSPredicate predicateWithFormat:@"label == ''"]].firstMatch;
+  XCTAssertTrue([n1 waitForExistenceWithTimeout:60] && [l1 waitForExistenceWithTimeout:10], @"点位未出现");
+  [NSThread sleepForTimeInterval:4];  // Dart 端进入点击阶段前要等首次回执
+  // 每次点击前重新取 frame（选中会改变 n1 的大小），间隔 2.5s 避开双击放大
+  NSArray<XCUIElement *> *seq = @[ n1, n1, n1, l1, l1, l1 ];
+  for (XCUIElement *e in seq) {
+    CGRect f = e.frame;
+    NSLog(@"S17UI tap %@ %@", e == n1 ? @"n1" : @"l1", NSStringFromCGRect(f));
+    [[self at:app point:CGPointMake(CGRectGetMidX(f), CGRectGetMidY(f))] tap];
+    [NSThread sleepForTimeInterval:2.5];
+  }
+  [NSThread sleepForTimeInterval:3];  // Dart 关闭诊断
+  for (XCUIElement *e in @[ n1, l1 ]) {
+    CGRect f = e.frame;
+    [[self at:app point:CGPointMake(CGRectGetMidX(f), CGRectGetMidY(f))] tap];
+    [NSThread sleepForTimeInterval:2.5];
+  }
+  [NSThread sleepForTimeInterval:4];
+  XCTAttachment *a = [XCTAttachment attachmentWithScreenshot:XCUIScreen.mainScreen.screenshot];
+  a.name = @"S17_end";
+  a.lifetime = XCTAttachmentLifetimeKeepAlways;
+  [self addAttachment:a];
+}
+
 // ---- S16：选择示例页真实点击（SDK → AMapViewController → 插件 → 通道 → Dart 页面日志） ----
 
 - (NSString *)logOf:(XCUIApplication *)app {

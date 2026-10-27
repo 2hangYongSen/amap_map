@@ -18,6 +18,7 @@ export 'marker_updates.dart';
 export 'native_marker.dart';
 export 'marker_image_resource.dart';
 export 'marker_selection.dart';
+export 'marker_diagnostics.dart';
 export 'polyline.dart';
 export 'polyline_updates.dart';
 export 'polygon.dart';

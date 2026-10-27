@@ -389,11 +389,47 @@ final class NativeRenderer implements ImageRegistry.Listener, RenderPipeline.Lis
         }
         evaluatePrewarm();
         checkTransition(); // 绘制失败也算已处理，不阻塞删除（R-DEL-5）
+        progress();
     }
 
     @Override
     public void applied() {
         checkTransition();
+        progress();
+    }
+
+    // ---------- 诊断（§13） ----------
+
+    /** 应用项或任务完成后通知诊断判断 t4 与 c2；未设置时无操作 */
+    private Runnable onProgress;
+
+    void setOnProgress(Runnable r) {
+        this.onProgress = r;
+    }
+
+    private void progress() {
+        if (onProgress != null && !disposed) {
+            onProgress.run();
+        }
+    }
+
+    /** 当前显示的外观与选择一致（c2 判定）；icon 点与不显示的点视为一致 */
+    boolean appearanceCurrent(String id) {
+        PointTable.Entry e = points.get(id);
+        if (e == null || e.hidden || e.isRemoving() || e.placeholder) {
+            return true;
+        }
+        boolean sel = pipeline.wantsSelected(e);
+        String key = sel ? e.selectedKey : e.normalKey;
+        if (key.equals(e.failedKey[sel ? 1 : 0])) {
+            return true; // 已失败：不会再到位，按已处理计
+        }
+        return e.shown != null && e.shownSelected == sel && e.shown.key.equals(key);
+    }
+
+    /** diag#clearCaches：淘汰全部可淘汰的合成位图（正在显示、待应用、备用的保留） */
+    void clearCaches() {
+        cache.evictAllEvictable();
     }
 
     // ---------- 销毁（§8.6） ----------

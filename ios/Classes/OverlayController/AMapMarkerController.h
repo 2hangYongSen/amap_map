@@ -16,6 +16,7 @@ NS_ASSUME_NONNULL_BEGIN
 @class AMapNativeEventLog;
 @class AMapNativeMarkerView;
 @class AMapNativeMarkerLayout;
+@class AMapMarkerDiagnostics;
 
 @interface AMapMarkerController : NSObject
 
@@ -50,6 +51,8 @@ NS_ASSUME_NONNULL_BEGIN
 
 @property (nonatomic, strong, readonly) AMapImageRegistry *registry;
 @property (nonatomic, strong, readonly) AMapNativeEventLog *events;
+/// 诊断与计时（§13）；标记方块由 AMapViewController 设置
+@property (nonatomic, strong, readonly) AMapMarkerDiagnostics *diag;
 /// 文字测量，默认 UIFont；测试替换为确定性测量器
 @property (nonatomic, strong) id<AMapTextMeasurer> measurer;
 
@@ -80,6 +83,11 @@ NS_ASSUME_NONNULL_BEGIN
 
 /// 地图销毁：关闭事件、丢弃之后的解码结果；幂等
 - (void)dispose;
+
+/// diag#ping：{nativeMs}；诊断未开启返回 nil（§13）
+- (nullable NSDictionary *)diagPing;
+/// diag#clearCaches：清空布局缓存；诊断未开启返回 NO
+- (BOOL)diagClearCaches;
 
 @end
 

@@ -10,6 +10,7 @@
 #import "AMapImageRegistry.h"
 #import "AMapSelectionState.h"
 #import "AMapSelectionAnnotation.h"
+#import "AMapMarkerDiagnostics.h"
 
 @class AMapMarker;
 @class AMapNativeMarkerView;
@@ -49,6 +50,13 @@ NS_ASSUME_NONNULL_BEGIN
 @property (nonatomic, weak, nullable) AMapNativeMarkerView *topView;
 /// markerTransition.mode == replaceWhenReady；iOS 删除仍在本次调用完成，只多发 markers#removed（R-DEL-6）
 @property (nonatomic, assign) BOOL replaceTransition;
+
+// ---- S17 诊断与计时（§13） ----
+@property (nonatomic, strong, readwrite) AMapMarkerDiagnostics *diag;
+/// 当前请求的计时记录；不在请求内或未开启时为 nil
+@property (nonatomic, strong, nullable) AMapDiagSync *diagSync;
+/// 当前点击的 tapId，随 selectionChanged 下发（R-TIME-2）
+@property (nonatomic, strong, nullable) NSNumber *currentTapId;
 
 @end
 

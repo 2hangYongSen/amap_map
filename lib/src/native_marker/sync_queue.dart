@@ -2,9 +2,11 @@ import 'dart:async';
 
 import '../types/base_overlay.dart';
 import '../types/marker.dart';
+import '../types/marker_diagnostics.dart';
 import '../types/marker_image_resource.dart';
 import '../types/marker_selection.dart';
 import '../types/marker_updates.dart';
+import 'diagnostics_tracker.dart';
 import 'image_sync.dart';
 import 'protocol.dart';
 import 'protocol_message.dart';
@@ -96,6 +98,16 @@ class MarkerSyncQueue {
   int _selectionRevision = -1;
 
   final List<_SelectCommand> _commands = <_SelectCommand>[];
+
+  // 诊断关联（§13）：原生已开启诊断（选项已确认）才记录，关闭时不产生任何通道调用
+  final MarkerDiagnosticsTracker _diag = MarkerDiagnosticsTracker();
+  bool get _diagOn => _v2 && _confirmedOptions.diagnostics;
+
+  void _deliverReport(MarkerUpdateReport? r) {
+    if (r != null && !_disposed) {
+      callbacks.onUpdateApplied?.call(r);
+    }
+  }
 
   bool _wantV2 = false;
   bool _v2 = false;

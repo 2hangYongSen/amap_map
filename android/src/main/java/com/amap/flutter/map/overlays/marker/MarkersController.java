@@ -180,7 +180,29 @@ public class MarkersController
                     result.success(nativeManager.setSelected(call.arguments));
                 }
                 break;
+            case Const.METHOD_DIAG_PING: {
+                // 诊断未开启时按 notImplemented 风格报错（§6.1）
+                Map<String, Object> ping = disposed ? null : nativeManager.diagPing();
+                if (ping == null) {
+                    result.error("diagnosticsDisabled", "markerDiagnostics 未开启", null);
+                } else {
+                    result.success(ping);
+                }
+                break;
+            }
+            case Const.METHOD_DIAG_CLEAR_CACHES:
+                if (!disposed && nativeManager.diagClearCaches()) {
+                    result.success(null);
+                } else {
+                    result.error("diagnosticsDisabled", "markerDiagnostics 未开启", null);
+                }
+                break;
         }
+    }
+
+    /** 诊断标记方块（R-TIME-6），由 AMapPlatformView 叠加在地图上 */
+    public void setDiagnosticsSquare(com.amap.flutter.map.overlays.marker.nativemarker.Diagnostics.Square s) {
+        nativeManager.setDiagnosticsSquare(s);
     }
 
 
@@ -309,6 +331,8 @@ public class MarkersController
      */
     @Override
     public boolean onMarkerClick(Marker marker) {
+        // SDK 10.1.200 经 onSingleTapConfirmed 排除双击后才回调这里。
+        // setSelectedMarker 跳过此等待；字节码证据与官方引用见 README「点位选择延迟」。
         String dartId = idMapByOverlyId.get(marker.getId());
         if (null == dartId) {
             return false;

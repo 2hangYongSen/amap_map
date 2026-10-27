@@ -240,6 +240,7 @@ AMapWidget(
 - 点击时先回调 `onMarkerSelectionChanged`，再回调 `Marker.onTap`；非 `selectable` 的点只回调 `onTap`，选择不变。
 - 代码中切换用 `controller.setSelectedMarker(id)`；传入当前已选中的 id 不产生任何效果，在回调里回写不会循环。
 - 选中点被删除后选择保留，重新加入时自动恢复高亮；改为 `selectable: false` 时取消选择，原因为 `invalidated`。
+- 点击气泡可能比调用 `setSelectedMarker` 更晚切换外观：SDK 点击路径需要等待排除双击，详见[点位选择延迟](#marker-selection-latency)。
 
 #### 集合替换过渡
 
@@ -276,9 +277,51 @@ markerTransition: const MarkerTransition.replaceWhenReady(
 </application>
 ```
 
-**Android 点击点位后约 0.3 秒才切换选中外观**
+<a id="marker-selection-latency"></a>
 
-这是高德 SDK 的点击识别延迟：手指抬起后约 290ms 才回调点击（华为 BRE-AL80 实测，关闭缩放手势也一样），插件从收到点击到换图只需几毫秒，选中图已提前绘制好。所有基于 SDK 点击回调的点位都有这段延迟，插件目前没有绕开。
+**点位选择延迟：为什么点击气泡比 Flutter 按钮调用 API 慢（iOS / Android）**
+
+两端高德 SDK 的点位点击路径都会先等待排除双击，再通知插件处理单击；`setSelectedMarker` 直接提交选择，跳过地图手势识别阶段。这个差异可以解释 AM-E50.7 示例中，点击气泡切换选中态有明显延迟，而按“选中 p2 / 取消选择”更快的现象。
+
+| 入口 | 执行路径 |
+| --- | --- |
+| 点击气泡 | 触摸传递到地图 → SDK 等待排除双击 → 点位点击回调 → 原生选择与外观更新 |
+| Flutter 按钮 | `setSelectedMarker` → Dart 命令队列 / MethodChannel → 原生选择与外观更新 |
+
+两种入口共用后面的选择实现，点击路径不依赖 Dart 的 `Marker.onTap` 回传选择命令：
+
+- iOS：[`didAnnotationViewTapped`](ios/Classes/AMapViewController.m) → `onMarkerTap` → `selectionOnMarkerTap`；它和 API 的 `setSelectedFromArgs` 都进入 [`commitSelection` → `syncTopAnnotation`](ios/Classes/OverlayController/AMapMarkerController+Selection.m)。
+- Android：[`onMarkerClick`](android/src/main/java/com/amap/flutter/map/overlays/marker/MarkersController.java) → `nativeManager.onMarkerTap`；它和 API 的 `setSelected` 都进入 [`commit` → `renderer.selectionChanged`](android/src/main/java/com/amap/flutter/map/overlays/marker/nativemarker/NativeMarkerManager.java)。
+
+以下证据于 **2026-10-27** 核对，适用于 [Android 依赖](android/build.gradle) `10.1.200_loc6.4.9_sea9.7.4` 和 [iOS 示例锁定依赖](example/ios/Podfile.lock) `AMap3DMap 10.1.200`。SDK 内部符号及实现可能随版本改变。
+
+1. **Android SDK 字节码与系统源码。** 对 [Maven Central 同版本 SDK JAR](https://repo.maven.apache.org/maven2/com/amap/api/3dmap-location-search/10.1.200_loc6.4.9_sea9.7.4/3dmap-location-search-10.1.200_loc6.4.9_sea9.7.4.jar)提取 `.class` 后执行 `javap -p -c`，可见 `com.amap.api.col.3sl.ab`（`GlMapGestureDetector.java`）注册了 `GestureDetector.setOnDoubleTapListener`。其内部类 `ab$a.onSingleTapUp()` 直接返回 `false`；`onSingleTapConfirmed()` 才调用 `IAMapDelegate.onSingleTapConfirmed()`。实现类 `com.amap.api.col.3sl.m` 在此方法中调用 `e(MotionEvent)`，进行 Marker 命中检测并调用 `OnMarkerClickListener.onMarkerClick()`。因此，插件收到的点位点击已经经过单击确认阶段。[Android 官方文档][tap-android-api]明确说明，`onSingleTapConfirmed` 只有在确认第一次点击不会被第二次点击组成双击后才调用。[AOSP `GestureDetector`][tap-android-source]的执行代码也在首次 `ACTION_DOWN` 时安排 `sendEmptyMessageDelayed(TAP, DOUBLE_TAP_TIMEOUT)`，之后才分发单击确认。超时取自 `ViewConfiguration.getDoubleTapTimeout()`；[AOSP 默认常量为 300ms][tap-android-timeout]，系统配置可能覆盖它，不能表述为“松手后固定等待 300ms”。
+2. **iOS SDK ARM64 二进制与 UIKit 契约。** 对已安装的 `example/ios/Pods/AMap3DMap/MAMapKit.framework/MAMapKit` 提取 ARM64 静态库及 `MAMapKit-arm64-master.o`，用 `llvm-objdump -dr` 检查指令和重定位符号：`-[MAMapView initGesture]` 在 `0x8f8f4` 将 `_zoomInGestureRecognizer` 的 `numberOfTapsRequired` 设为 `2`，在 `0x8fb04` 让 `_singleTapGestureRecognizer` 调用 `requireGestureRecognizerToFail:`，参数为该双击放大识别器；`-[MAMapView singleTapGesture:]` 在 `0x86200` 调用 `mapView:didAnnotationViewTapped:`。这证明点位点击回调位于等待双击失败的单击路径中。[Apple 官方文档][tap-apple-api]说明，这种依赖会延迟当前识别器离开 `possible` 状态，直到另一个识别器失败，并直接以“单击等待双击失败”为例。
+
+iOS 上述二进制行为可概括为以下等价代码（非高德公开源码）：
+
+```objc
+_zoomInGestureRecognizer.numberOfTapsRequired = 2;
+[_singleTapGestureRecognizer requireGestureRecognizerToFail:_zoomInGestureRecognizer];
+// singleTapGesture: 确认后再通知 mapView:didAnnotationViewTapped:
+```
+
+Flutter 的触摸仲裁是另一个阶段。[引擎 `FlutterPlatformViews.mm`][tap-flutter-source]中，`releaseGesture` 直接把延迟识别器设为 `UIGestureRecognizerStateFailed`；`WaitUntilTouchesEnded` 策略分支位于 `blockGesture` 中。因此不能只凭本插件注册时使用的策略名称断定它造成固定延迟，改用 `EagerGestureRecognizer` 也不会自动移除高德 SDK 内部的双击等待。
+
+社区与博客旁证：
+
+- [Mapbox Flutter #796][tap-mapbox-issue]报告 iOS / Android 均存在约半秒的地图点击回调延迟，贡献者认为与等待双击超时有关。这是其他 SDK 的案例，只作旁证，不用于证明高德的具体实现或耗时。
+- [Hacking with Swift：`require(toFail:)`][tap-swift-blog]展示手势识别器之间的失败依赖，可辅助理解 iOS 的等待机制。
+
+**验证边界：** 本次确认的是 SDK 等待机制和调用链，没有对当前两端设备进行分段计时，不能断言全部可感知延迟都来自双击识别，也不能把默认超时当作实测耗时或保证外观更新只需几毫秒。定位具体耗时时，应记录“原生收到触摸 → SDK 点位点击回调 → 外观更新提交”的时间点；若要测到用户看到变化，还需测量实际帧呈现。API 与点击应交替切换同一点的选中 / 未选中状态，避免把重复选择同一 id 的无操作当作快速更新。
+
+[tap-android-api]: https://developer.android.com/reference/android/view/GestureDetector.OnDoubleTapListener#onSingleTapConfirmed(android.view.MotionEvent)
+[tap-android-source]: https://github.com/aosp-mirror/platform_frameworks_base/blob/master/core/java/android/view/GestureDetector.java
+[tap-android-timeout]: https://github.com/aosp-mirror/platform_frameworks_base/blob/master/core/java/android/view/ViewConfiguration.java
+[tap-apple-api]: https://developer.apple.com/documentation/uikit/uigesturerecognizer/require(tofail:)
+[tap-flutter-source]: https://github.com/flutter/flutter/blob/ff37bef603469fb030f2b72995ab929ccfc227f0/engine/src/flutter/shell/platform/darwin/ios/framework/Source/FlutterPlatformViews.mm
+[tap-mapbox-issue]: https://github.com/mapbox/mapbox-maps-flutter/issues/796#issuecomment-2615576297
+[tap-swift-blog]: https://www.hackingwithswift.com/example-code/uikit/how-to-make-gesture-recognizers-work-together-using-requiretofail
 
 **模拟器在 `com.amap.api.col.3sl.dl$b.createContext(GlesUtility.java:73)` 闪退**
 

@@ -187,6 +187,56 @@ void main() {
     expect(methods(), <String>['markers#update']);
   });
 
+  testWidgets('诊断回调开启新协议；回执与点击计时经通道交付', (WidgetTester tester) async {
+    platform.creationParamsSeen.clear();
+    final List<MarkerUpdateReport> reports = <MarkerUpdateReport>[];
+    final List<MarkerTapReport> taps = <MarkerTapReport>[];
+    final List<String> tapped = <String>[];
+    await open(
+        tester,
+        () => AMapWidget(
+              markers: <Marker>{
+                Marker(
+                    markerId: 'i',
+                    position: const LatLng(30, 120),
+                    onTap: tapped.add)
+              },
+              onMarkerUpdateApplied: reports.add,
+              onMarkerTapApplied: taps.add,
+            ));
+    final Map<String, dynamic> params = platform.creationParamsSeen.single;
+    expect(params['protocolVersion'], 2);
+    expect(params['markerDiagnostics'], isTrue);
+    Future<void> send(String method, Map<String, Object?> args) async {
+      await tester.binding.defaultBinaryMessenger.handlePlatformMessage(
+          'amap_map_$mapId',
+          const StandardMethodCodec().encodeMethodCall(MethodCall(method, args)),
+          (_) {});
+      await tester.pumpAndSettle();
+    }
+
+    await send('marker#onTap', <String, Object?>{'markerId': 'i', 'tapId': 1});
+    expect(tapped, <String>['i'], reason: '业务 onTap 照常');
+    await send('markers#applied', <String, Object?>{
+      'eventSeq': 1,
+      'syncId': 0,
+      'nativeT2Ms': 1.0,
+      'nativeT4Ms': 2.0,
+      't2ToT3Ms': 0.5,
+      't2ToT4Ms': 1.0,
+    });
+    await send('markers#tapApplied', <String, Object?>{
+      'eventSeq': 2,
+      'tapId': 1,
+      'markerId': 'i',
+      'c1Ms': 10.0,
+      'c2Ms': 12.0,
+      'path': 'icon',
+    });
+    expect(reports.single.syncId, 0);
+    expect(taps.single.c1ToC2Ms, 2.0);
+  });
+
   testWidgets('T-COMPAT-1 纯旧协议地图创建参数与更新载荷不含新键',
       (WidgetTester tester) async {
     platform.creationParamsSeen.clear();
