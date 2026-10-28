@@ -42,11 +42,18 @@
 
 ## 安装
 
-```bash
-flutter pub add amap_map
+本 fork 不发布到 pub.dev（`publish_to: none`），按 git tag 引用；`x_amap_base` 需要显式声明：
+
+```yaml
+dependencies:
+  amap_map:
+    git:
+      url: https://github.com/2hangYongSen/amap_map.git
+      ref: v1.1.0-native.1
+  x_amap_base: ^1.0.3
 ```
 
-更多说明见 [在 Flutter 里使用 Packages](https://flutter.cn/docs/development/packages-and-plugins/using-packages)。
+上游版本仍可用 `flutter pub add amap_map` 安装，但不含原生点位。iOS 依赖精确锁定 `AMap3DMap 10.1.200`。
 
 ## 快速开始
 
@@ -144,7 +151,7 @@ class _MapPageState extends State<MapPage> {
 
 给 `Marker` 设置 `nativePresentation` 后，点位由原生端按样式绘制，不再需要 Flutter 先把每个点画成 PNG；旧的 `icon` 用法不受影响。
 
-> **开发中**：Android 已完成形状、图片背景、图标、降级恢复、原生选择与集合替换过渡；iOS 尚未支持。
+> Android 与 iOS 均已支持形状、图片背景（含九宫格）、图标、资源降级与恢复、原生选择与置顶、集合替换过渡和诊断计时。双端真机验收见 [S18 报告](docs/superpowers/experiments/2026-10-27-s18/report.md)。
 
 #### 基本用法
 
@@ -259,6 +266,24 @@ markerTransition: const MarkerTransition.replaceWhenReady(
 
 `fontWeight` 只允许 w400 / w500 / w600 / w700。Android API 28 及以上按精确字重绘制；低于 API 28 时系统字体只有常规和粗体两档：w400、w500 显示为常规，w600、w700 显示为粗体。
 
+#### 诊断计时
+
+给 `onMarkerUpdateApplied` 或 `onMarkerTapApplied` 传入回调即开启诊断（两者都为空时原生不发任何回执）。开启后会启用新协议，并在地图左上角显示 8×8 的标记方块，颜色按更新轮换，用于录屏对齐。
+
+```dart
+AMapWidget(
+  markers: markers,
+  onMarkerUpdateApplied: (MarkerUpdateReport r) =>
+      debugPrint('t2→t4 ${r.t2ToT4Ms}ms，绘制 ${r.drawCount}'), // 原生同一时钟
+  onMarkerTapApplied: (MarkerTapReport t) =>
+      debugPrint('点击 c1→c2 ${t.c1ToC2Ms}ms（${t.path.name}）'),
+)
+```
+
+- `controller.calibrateNativeClock()` 估计 Dart 与原生时钟的偏移，`arrivalToAppliedMs` 估算“数据到达 → 原生应用完成”；结果是时钟校准估算，带不确定区间。
+- `controller.clearNativeMarkerCaches()` 用于冷测试前清缓存。诊断关闭时这两个方法抛 `PlatformException`。
+- 回执中的时间不等于“屏幕已显示”，实际显示时间需要录屏核对。仅建议在调试和性能测试中开启。
+
 ## 示例应用
 
 [`example/`](example) 是按功能分组的测试应用，每个页面带测试编号和「测试步骤」说明，运行方式见 [example/README.md](example/README.md)。
@@ -333,6 +358,18 @@ Flutter 的触摸仲裁是另一个阶段。[引擎 `FlutterPlatformViews.mm`][t
 flutter test                         # 插件 Dart 单测
 (cd example && flutter test)         # 示例应用 Widget 测试
 source example/tool/env.sh && jvm_test   # Android JVM 单测
+```
+
+真机集成测试（需要已连接的设备，结果在 `example/build/s18_android/`、`example/build/s18_ios/`）：
+
+```bash
+cd example
+tool/s18_android_run.sh native_marker_test.dart <设备 id>       # 资源恢复、页面进出、旧路径回归
+tool/s18_android_run.sh native_marker_tap_test.dart <设备 id>   # 真实点击（主机 adb input tap）
+tool/s18_android_run.sh native_marker_perf_test.dart <设备 id>  # §13.4 性能场景
+tool/s18_ios_run.sh native_marker_test.dart <udid>
+tool/s18_ios_run.sh native_marker_tap_test.dart <udid> S14UITests/S14UITests/testS18Commands
+tool/s18_ios_run.sh native_marker_perf_test.dart <udid>
 ```
 
 提交前确认 `flutter analyze` 没有新增问题。版本记录见 [CHANGELOG.md](CHANGELOG.md)，问题反馈请提交 [Issue](https://github.com/kuloud/amap_map/issues)。

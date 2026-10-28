@@ -96,6 +96,35 @@
   [self addAttachment:a];
 }
 
+// ---- S18：通用命令驱动。App 以 integration_test/native_marker_tap_test.dart 为入口，
+// 命令写在一个不可点击的原生点位文字里："S18|序号|op|参数"（原生点位文字进无障碍树）。
+// op = tap（x,y 为点）/ done；结果由 Dart 写到 App tmp/s18/，s18_ios_run.sh 取回 ----
+
+- (void)testS18Commands {
+  XCUIApplication *app = [XCUIApplication new];
+  [app launch];
+  XCUIElement *cmd = [[app descendantsMatchingType:XCUIElementTypeAny]
+      matchingPredicate:[NSPredicate predicateWithFormat:@"label BEGINSWITH 'S18|'"]].firstMatch;
+  XCTAssertTrue([cmd waitForExistenceWithTimeout:60], @"命令点位未出现");
+  NSString *lastSeq = @"0";
+  NSDate *deadline = [NSDate dateWithTimeIntervalSinceNow:40 * 60];
+  while ([deadline timeIntervalSinceNow] > 0) {
+    NSArray<NSString *> *f = [cmd.label componentsSeparatedByString:@"|"];
+    if (f.count < 4 || [f[1] isEqualToString:lastSeq]) {
+      [NSThread sleepForTimeInterval:0.1];
+      continue;
+    }
+    lastSeq = f[1];
+    NSLog(@"S18UI cmd %@", cmd.label);
+    if ([f[2] isEqualToString:@"done"]) break;
+    if ([f[2] isEqualToString:@"tap"]) {
+      NSArray *p = [f[3] componentsSeparatedByString:@","];
+      [[self at:app point:CGPointMake([p[0] doubleValue], [p[1] doubleValue])] tap];
+    }
+  }
+  XCTAssertTrue([deadline timeIntervalSinceNow] > 0, @"S18 超时");
+}
+
 // ---- S16：选择示例页真实点击（SDK → AMapViewController → 插件 → 通道 → Dart 页面日志） ----
 
 - (NSString *)logOf:(XCUIApplication *)app {

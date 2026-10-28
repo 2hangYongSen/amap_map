@@ -116,6 +116,26 @@ public class ImageRegistryTest {
         registry.unref("B", ImageEntry.Ref.DESIRED);
     }
 
+    // S18：failed 后重新登记时使用新来源（与 iOS registerSource: 一致），T-RES-13 依赖
+    @Test
+    public void failedRetryUsesLatestSource() {
+        ImageSource bad = new ImageSource("P", ImageSource.TYPE_ASSET, null, "assets/missing.png", null, 2.0);
+        decoder.failingAssets.add("assets/missing.png");
+        registry.register(bad);
+        runner.drain();
+        assertEquals(ImageEntry.State.FAILED, registry.entry("P").state());
+        registry.register(FakeImages.asset("P"));
+        runner.drain();
+        assertEquals("重试应读取新的 asset 名", ImageEntry.State.READY, registry.entry("P").state());
+        assertEquals("assets/P.png", registry.entry("P").source.asset);
+        // ready 后再登记不同来源：不重新解码，来源不变
+        int decodes = registry.decodeCount();
+        registry.register(bad);
+        runner.drain();
+        assertEquals(decodes, registry.decodeCount());
+        assertEquals("assets/P.png", registry.entry("P").source.asset);
+    }
+
     // T-RES-8：12 个 1MiB 资源，4 个被任务引用；淘汰只发生在另外 8 个中
     @Test
     public void tRes8_evictOnlyUnreferenced() {

@@ -49,3 +49,9 @@ cd example/android && ./gradlew :amap_map:testDebugUnitTest
 ## 对照入口
 
 `example/lib/pages/interactive/marker_benchmark_page.dart` 提供点位数量（0/100/200）和图标类型（默认图标 / PNG 图标）切换，用于旧 `Marker.icon` 路径的对照。
+
+## 版本与验证（S18 起）
+
+- 版本格式 `1.1.0-native.N`，`publish_to: none`；`ios/amap_map.podspec` 的 `s.version` 与 `pubspec.yaml` 同步，`AMap3DMap` 精确锁定 10.1.200。每个版本单独一段 CHANGELOG 并打 tag `v<版本>`。
+- 发版前除上面的单测外，双端真机各跑一次集成测试（`example/tool/s18_android_run.sh`、`example/tool/s18_ios_run.sh`，入口 `native_marker_test.dart`、`native_marker_tap_test.dart`、`native_marker_perf_test.dart`），用 `example/tool/s18_summary.py` 汇总，与 `docs/superpowers/experiments/2026-10-27-s18/report.md` 对比。
+- iOS 真实点击依赖 XCUITest；设备系统高于 Xcode 支持的版本时运行器无法启动（testmanagerd 不可用），需先升级 Xcode。

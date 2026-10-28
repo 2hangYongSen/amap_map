@@ -1,6 +1,8 @@
 name: amap_map
 description: Amap SDK Flutter plugin for integrating AMapSDK in iOS and Android applications.
-version: 1.0.15
+version: 1.1.0-native.1
+# fork 版本不发布到 pub.dev，业务应用按 git tag 引用（规格 §18）
+publish_to: none
 homepage: https://github.com/kuloud/amap_map
 issue_tracker: https://github.com/kuloud/amap_map/issues
 platforms:

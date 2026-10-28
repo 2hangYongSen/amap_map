@@ -68,6 +68,7 @@ public final class ImageRegistry implements ImageResolver {
         // ready 不重新解码；failed 是重试：回到 pending、换 epoch 重新解码
         if (e.state == ImageEntry.State.FAILED) {
             e.state = ImageEntry.State.PENDING;
+            e.source = src; // 用最新来源重试
             startDecode(e);
         }
     }

@@ -4,7 +4,7 @@
 #
 Pod::Spec.new do |s|
   s.name             = 'amap_map'
-  s.version          = '1.0.8'
+  s.version          = '1.1.0-native.1'  # 与 pubspec.yaml 同步
   s.summary          = 'A new Flutter plugin.'
   s.description      = <<-DESC
 A new Flutter plugin for AMap.
@@ -12,11 +12,11 @@ A new Flutter plugin for AMap.
   s.homepage         = 'https://github.com/kuloud/amap_map'
   s.license          = { :type => 'Apache License, Version 2.0', :file => '../LICENSE' }
   s.author           = { 'kuloud' => 'kuloud@outlook.com' }
-  s.source           = { :git => 'https://github.com/kuloud/amap_map.git', :tag => 'v1.0.8' }
+  s.source           = { :git => 'https://github.com/2hangYongSen/amap_map.git', :tag => 'v1.1.0-native.1' }
   s.source_files = 'Classes/**/*'
   s.public_header_files = 'Classes/**/*.h'
   s.dependency 'Flutter'
-  s.dependency 'AMap3DMap'
+  s.dependency 'AMap3DMap', '10.1.200'  # 精确锁定，与 Android SDK 同版本（V-3）
   s.static_framework = true
   s.platform = :ios, '12.0'
 

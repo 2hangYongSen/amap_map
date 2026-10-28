@@ -30,6 +30,7 @@ final class MarkerTapReport {
     required this.c1Ms,
     required this.c2Ms,
     required this.path,
+    this.drawCount = 0,
   });
 
   final int tapId;
@@ -37,6 +38,10 @@ final class MarkerTapReport {
   final double c1Ms;
   final double c2Ms;
   final MarkerTapPath path;
+
+  /// c1→c2 期间原生绘制的次数（Android 合成位图，iOS 布局未命中）；
+  /// 缓存命中的点击应为 0（§13.5）
+  final int drawCount;
 
   /// c1 → c2，原生同一时钟
   double get c1ToC2Ms => c2Ms - c1Ms;
@@ -49,10 +54,12 @@ final class MarkerTapReport {
           markerId == other.markerId &&
           c1Ms == other.c1Ms &&
           c2Ms == other.c2Ms &&
-          path == other.path;
+          path == other.path &&
+          drawCount == other.drawCount;
 
   @override
-  int get hashCode => Object.hash(tapId, markerId, c1Ms, c2Ms, path);
+  int get hashCode =>
+      Object.hash(tapId, markerId, c1Ms, c2Ms, path, drawCount);
 
   @override
   String toString() => 'MarkerTapReport{tapId: $tapId, markerId: $markerId, '
