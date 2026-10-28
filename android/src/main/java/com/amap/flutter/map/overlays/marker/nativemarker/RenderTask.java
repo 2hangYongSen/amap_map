@@ -25,7 +25,6 @@ final class RenderTask {
     int priority;
     State state = State.QUEUED;
     PaintJob job;
-
     RenderTask(String key, NativeMarkerSpec spec, boolean selected, int priority, long seq) {
         this.key = key;
         this.spec = spec;

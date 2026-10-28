@@ -14,6 +14,7 @@
 
 @implementation DiagFakeMap
 - (void)addAnnotation:(id<MAAnnotation>)a {}
+- (void)addAnnotations:(NSArray *)as {}
 - (void)removeAnnotation:(id<MAAnnotation>)a {}
 - (MAAnnotationView *)viewForAnnotation:(id<MAAnnotation>)a { return nil; }
 - (MAAnnotationView *)dequeueReusableAnnotationViewWithIdentifier:(NSString *)i { return nil; }

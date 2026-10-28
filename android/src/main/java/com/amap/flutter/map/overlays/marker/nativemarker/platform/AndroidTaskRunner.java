@@ -7,19 +7,23 @@ import android.os.Process;
 import com.amap.flutter.map.overlays.marker.nativemarker.TaskRunner;
 import com.amap.flutter.map.utils.LogUtil;
 
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
+import com.amap.flutter.map.overlays.marker.nativemarker.PaintExecutor;
+
 import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.ThreadFactory;
+import java.util.concurrent.atomic.AtomicInteger;
 
 /**
- * 单后台线程（THREAD_PRIORITY_BACKGROUND）加主线程 Handler（R-DISP-3）。
+ * {@link #THREADS} 个后台线程（THREAD_PRIORITY_BACKGROUND）共用一个优先级队列，加主线程 Handler（R-DISP-3）。
  * Handler 的 Runnable 只引用管理器内部对象，不持有 Activity 或 MapView。
  */
 public final class AndroidTaskRunner implements TaskRunner {
     private static final String CLASS_NAME = "AndroidTaskRunner";
+    /** 后台线程数：与 Flutter / 地图渲染线程抢 CPU，按真机对照测试取值 */
+    public static final int THREADS = 2;
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
-    private final ExecutorService executor = Executors.newSingleThreadExecutor(new ThreadFactory() {
+    private final AtomicInteger threadSeq = new AtomicInteger();
+    private final PaintExecutor executor = new PaintExecutor(THREADS, new ThreadFactory() {
         @Override
         public Thread newThread(final Runnable r) {
             return new Thread(new Runnable() {
@@ -28,7 +32,7 @@ public final class AndroidTaskRunner implements TaskRunner {
                     Process.setThreadPriority(Process.THREAD_PRIORITY_BACKGROUND);
                     r.run();
                 }
-            }, "amap-native-marker");
+            }, "amap-native-marker-" + threadSeq.incrementAndGet());
         }
     });
 

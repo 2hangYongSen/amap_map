@@ -56,6 +56,8 @@ final class NativeRenderer implements ImageRegistry.Listener, RenderPipeline.Lis
         cache = new RenderCache(d.icons, d.cacheBudget);
         scheduler = new RenderScheduler(registry, d.runner, d.painter, d.densityUnits, d.maxRunning);
         applier = new FrameApplier(d.clock, d.frameBudgetNanos);
+        // 普通态攒到全部画完再一次放（§8.4），不等 P2 预热
+        applier.setNormalPending(() -> scheduler.hasActive(RenderTask.P1));
         pipeline = new RenderPipeline(points, cache, scheduler, applier, host, d.icons, selection);
         pipeline.setListener(this);
     }
@@ -285,10 +287,13 @@ final class NativeRenderer implements ImageRegistry.Listener, RenderPipeline.Lis
         return normalIdle || (e.shownSelected && selIdle);
     }
 
-    /** R-PRI-3：缓存 ≥90%、刷新后发生过淘汰、仍有 P0/P1 排队，任一成立就停止预热 */
+    /**
+     * R-PRI-3：缓存 ≥90%、刷新后发生过淘汰、仍有 P0 排队、仍有 P1 未画完（排队或执行中），任一成立就停止预热。
+     * 等普通态全部画完再预热，预热不和普通态抢后台线程，也不推迟普通态一次放出（§8.4）
+     */
     private boolean prewarmAllowed() {
         return !disposed && !cache.nearBudget() && cache.evictCount() == evictsAtRefresh
-                && !scheduler.hasQueued(RenderTask.P0) && !scheduler.hasQueued(RenderTask.P1);
+                && !scheduler.hasQueued(RenderTask.P0) && !scheduler.hasActive(RenderTask.P1);
     }
 
     /** 条件变化后重新评估：允许则补登记，不允许则撤回排队中的 P2 */

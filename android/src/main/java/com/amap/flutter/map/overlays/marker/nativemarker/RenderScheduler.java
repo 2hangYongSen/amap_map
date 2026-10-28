@@ -18,6 +18,9 @@ final class RenderScheduler {
         void onTaskDone(RenderTask t, MarkerPainter.Result result, Throwable error);
     }
 
+    /** 在途已满时 P0 仍可额外派发的个数 */
+    static final int P0_EXTRA = 2;
+
     /** 每个渲染 key 最多一个 queued 或 running 任务 */
     private final Map<String, RenderTask> tasks = new LinkedHashMap<>();
     private final ImageRegistry registry;
@@ -30,7 +33,6 @@ final class RenderScheduler {
     private int running = 0;
     private boolean pumpPosted = false;
     private boolean disposed = false;
-
     RenderScheduler(ImageRegistry registry, TaskRunner runner, MarkerPainter painter,
                     int densityUnits, int maxRunning) {
         this.registry = registry;
@@ -103,9 +105,13 @@ final class RenderScheduler {
         }
     }
 
+    /**
+     * 一次挑满 maxRunning 个在途任务交给后台队列，后台线程画完一个直接取下一个，不等主线程。
+     * P0（选中态）额外有 {@link #P0_EXTRA} 个名额：在途已满时也立即派发，不被一批 P1/P2 挡住。
+     */
     private void pump() {
         pumpPosted = false;
-        while (!disposed && running < maxRunning) {
+        while (!disposed) {
             RenderTask best = null;
             for (RenderTask t : tasks.values()) {
                 if (t.state == RenderTask.State.QUEUED && ready(t) && (best == null || t.before(best))) {
@@ -113,6 +119,10 @@ final class RenderScheduler {
                 }
             }
             if (best == null) {
+                return;
+            }
+            int limit = best.priority == RenderTask.P0 ? maxRunning + P0_EXTRA : maxRunning;
+            if (running >= limit) {
                 return;
             }
             start(best);
@@ -140,7 +150,8 @@ final class RenderScheduler {
         t.job = new PaintJob(t.key, t.spec, t.selected, densityUnits, registry, t.expectReady);
         running++;
         final PaintJob job = t.job;
-        boolean accepted = runner.background(() -> {
+        // 带派发时的优先级进后台队列：P0 插到已在途的 P1/P2 前面
+        boolean accepted = runner.background(new Prioritized(t.priority, () -> {
             MarkerPainter.Result out = null;
             Throwable err = null;
             try {
@@ -157,7 +168,7 @@ final class RenderScheduler {
                 final Throwable e = err;
                 runner.main(() -> finish(t, r, e));
             }
-        });
+        }));
         if (!accepted) {
             // 执行器已关闭：任务不会执行，立即在主线程归还（running--，可能进入 terminated）
             finish(t, null, new RejectedExecutionException("后台执行器已关闭"));
@@ -201,9 +212,37 @@ final class RenderScheduler {
         }
     }
 
+    /**
+     * 后台队列里的绘制任务，携带派发时的优先级。派发后再被提升（如预热中的选中态被点击）不会重排，
+     * 最多排在 maxRunning 个已派发任务之后，所以 maxRunning 不宜过大。
+     */
+    private static final class Prioritized implements PaintExecutor.Prioritized {
+        private final int priority;
+        private final Runnable r;
+
+        Prioritized(int priority, Runnable r) {
+            this.priority = priority;
+            this.r = r;
+        }
+
+        @Override public int priority() { return priority; }
+
+        @Override public void run() { r.run(); }
+    }
+
     Collection<RenderTask> tasks() { return tasks.values(); }
 
     int runningCount() { return running; }
+
+    /** 该优先级是否还有未完成的任务（排队或执行中） */
+    boolean hasActive(int priority) {
+        for (RenderTask t : tasks.values()) {
+            if (t.priority == priority) {
+                return true;
+            }
+        }
+        return false;
+    }
 
     boolean hasQueued(int priority) {
         for (RenderTask t : tasks.values()) {

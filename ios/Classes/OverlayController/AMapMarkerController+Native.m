@@ -147,8 +147,10 @@ static NSString *const kApplyFailed = @"applyFailed";
             [removed addObject:id_];
         }
     }
+    self.pendingAdds = [NSMutableArray array];
     [self applyList:args[@"markersToAdd"] rejected:rejected];
     [self applyList:args[@"markersToChange"] rejected:rejected];
+    [self flushPendingAdds];
     for (NSString *id_ in releases) {
         [self.registry releaseId:id_];
     }
@@ -235,6 +237,15 @@ static NSString *const kApplyFailed = @"applyFailed";
 
 // ---------- 单个点位 ----------
 
+/// 把本次请求收集的新增 annotation 一次加到地图上
+- (void)flushPendingAdds {
+    NSArray *adds = self.pendingAdds;
+    self.pendingAdds = nil;
+    if (adds.count > 0) {
+        [self.mapView addAnnotations:adds];
+    }
+}
+
 - (void)applyList:(id)list rejected:(NSMutableArray *)rejected {
     for (id raw in AMapArray(list)) {
         NSString *id_ = AMapReadId(raw);
@@ -266,10 +277,15 @@ static NSString *const kApplyFailed = @"applyFailed";
     if (reAdd) {
         [self detachViewsOf:id_];
         if (current) {
+            [self.pendingAdds removeObject:current.annotation]; // 同一请求内先加后换：旧的还没上地图
             [self.mapView removeAnnotation:current.annotation];
         }
         self.markerDict[id_] = next;
-        [self.mapView addAnnotation:next.annotation];
+        if (self.pendingAdds) {
+            [self.pendingAdds addObject:next.annotation];
+        } else {
+            [self.mapView addAnnotation:next.annotation];
+        }
     } else {
         [current replaceWithMarker:next];
         current.icon = next.icon;

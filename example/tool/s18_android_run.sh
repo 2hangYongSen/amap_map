@@ -17,7 +17,9 @@ cd "$here"
 if adb -s "$dev" shell 'command -v su' 2>/dev/null | grep -q su; then root=1; else root=0; fi
 run() { if [ "$root" = 1 ]; then adb -s "$dev" shell "su -c '$1'"; else adb -s "$dev" shell "$1"; fi; }
 if [ "${3:-}" != "--no-build" ]; then
-  flutter build apk --profile --target="integration_test/$target" | tail -1
+  # S18_DEFINES：可选的额外编译参数（如 --dart-define=COMPARE_COUNTS=200）
+  # shellcheck disable=SC2086
+  flutter build apk --profile --target="integration_test/$target" ${S18_DEFINES:-} | tail -1
   if [ "$root" = 1 ]; then
     adb -s "$dev" push "$apk" /data/local/tmp/s18.apk >/dev/null
     run 'pm install -r -t /data/local/tmp/s18.apk && rm -f /data/local/tmp/s18.apk'
