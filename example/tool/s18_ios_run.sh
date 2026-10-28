@@ -20,14 +20,17 @@ fetch() {  # 取回 App 容器 tmp/s18 目录
 }
 if [ -n "$uitest" ]; then
   # UI 测试路径：Xcode 构建阶段按 FLUTTER_TARGET 编译 Dart 入口
-  flutter build ios --release --config-only -t "integration_test/$target" | tail -1
+  # shellcheck disable=SC2086
+  flutter build ios --release --config-only -t "integration_test/$target" ${S18_DEFINES:-} | tail -1
   (cd ios && xcodebuild test -workspace Runner.xcworkspace -scheme S14 -destination "id=$dev" \
     -configuration Release -derivedDataPath ../build/s17dd -allowProvisioningUpdates \
     -only-testing:"$uitest" -resultBundlePath "$out/result.xcresult" >"$out/xcodebuild.log" 2>&1) \
     || echo "xcodebuild exit $?"
   grep -E "S18UI|error:|\*\* TEST" "$out/xcodebuild.log" | tail -20 || true
 else
-  flutter build ios --release -t "integration_test/$target" | tail -1
+  # S18_DEFINES：可选的额外编译参数（如 --dart-define=COMPARE_COUNTS=200）
+  # shellcheck disable=SC2086
+  flutter build ios --release -t "integration_test/$target" ${S18_DEFINES:-} | tail -1
   xcrun devicectl device install app --device "$dev" build/ios/iphoneos/Runner.app >/dev/null
   xcrun devicectl device process launch --device "$dev" --terminate-existing "$bundle" >/dev/null
   end=$((SECONDS + ${S18_TIMEOUT:-3600}))

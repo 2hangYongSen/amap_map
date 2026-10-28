@@ -107,21 +107,54 @@ public class NativeMarkerRenderTest {
         assertEquals("icon:X", h.iconOf("p"));
     }
 
-    // §8.4：每帧 4ms 预算，在每项之后检查，剩余留到下一帧
+    // §8.4：普通态全部画完后在同一帧一次放完，不受 4ms 预算限制
     @Test
     @SuppressWarnings("unchecked")
-    public void frameBudgetSplitsApplyAcrossFrames() {
+    public void normalAppliesAllInOneFrameWhenPaintsDone() {
         h.host.onNativeCall = () -> h.loop.now += 1_000_000; // 每次 SDK 调用 1ms
         Map<String, Object>[] ms = new Map[10];
         for (int i = 0; i < 10; i++) {
-            ms[i] = Payloads.nativeMarker("f" + i, "same");
+            ms[i] = Payloads.nativeMarker("f" + i, "k" + i);
         }
         h.add(ms);
+        h.loop.runMain();
+        h.loop.bg.poll().run(); // 只画完一个
+        h.loop.runMain();
+        h.loop.frame();
+        assertEquals("还有普通态没画完：不放", 0, h.host.count("add:"));
         h.loop.drainNoFrame();
         h.loop.frame();
-        assertEquals(4, h.host.count("add:"));
+        assertEquals("全部画完：同一帧放完", 10, h.host.count("add:"));
+    }
+
+    // §8.4：攒超过 300ms 仍有普通态没画完，先按每帧预算放已画好的
+    @Test
+    @SuppressWarnings("unchecked")
+    public void holdTimesOutAndAppliesByBudget() {
+        h.host.onNativeCall = () -> h.loop.now += 1_000_000;
+        Map<String, Object>[] ms = new Map[10];
+        for (int i = 0; i < 10; i++) {
+            ms[i] = Payloads.nativeMarker("t" + i, "k" + i);
+        }
+        h.add(ms);
+        // 逐个画完 9 个，第 10 个派发后卡住不执行
+        h.loop.runMain();
+        while (h.host.count("add:") == 0 && h.loop.bg.size() + h.loop.mainQ.size() > 0) {
+            if (h.loop.bg.size() == 1 && h.r().scheduler.tasks().size() == 1) {
+                break;
+            }
+            h.loop.runBg();
+            h.loop.runMain();
+        }
+        Runnable stuck = h.loop.bg.poll();
+        h.loop.frame();
+        assertEquals("攒着：还有 1 个没画完", 0, h.host.count("add:"));
+        h.loop.now += FrameApplier.HOLD_TIMEOUT_NANOS;
+        h.loop.frame();
+        assertEquals("超时：按 4ms 预算放", 4, h.host.count("add:"));
         h.loop.frame();
         assertEquals(8, h.host.count("add:"));
+        stuck.run();
         h.loop.drain();
         assertEquals(10, h.host.count("add:"));
     }

@@ -50,6 +50,9 @@ NS_ASSUME_NONNULL_BEGIN
 @property (nonatomic, weak, nullable) AMapNativeMarkerView *topView;
 /// markerTransition.mode == replaceWhenReady；iOS 删除仍在本次调用完成，只多发 markers#removed（R-DEL-6）
 @property (nonatomic, assign) BOOL replaceTransition;
+/// 非空时 applyOne 只收集要新增的 annotation，请求末尾一次 addAnnotations:。
+/// SDK 每次添加调用有一笔随已有点数增长的固定开销，1000 点逐个添加约 600ms，一次添加约 380ms（iPhone 12 mini）
+@property (nonatomic, strong, nullable) NSMutableArray<id<MAAnnotation>> *pendingAdds;
 
 // ---- S17 诊断与计时（§13） ----
 @property (nonatomic, strong, readwrite) AMapMarkerDiagnostics *diag;

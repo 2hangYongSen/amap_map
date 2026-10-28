@@ -27,6 +27,7 @@ import 'package:amap_map_example/pages/interactive/move_camera_demo.dart';
 import 'package:amap_map_example/pages/interactive/poi_click_demo.dart';
 import 'package:amap_map_example/pages/interactive/snapshot_demo.dart';
 import 'package:amap_map_example/pages/interactive/marker_benchmark_page.dart';
+import 'package:amap_map_example/pages/interactive/marker_compare_page.dart';
 import 'package:amap_map_example/pages/interactive/house_map_page.dart';
 
 enum DemoCategory {
@@ -421,6 +422,19 @@ List<Demo> allDemos() => <Demo>[
             DemoConfiguration(
                 buildRoute: (BuildContext context) =>
                     const MarkerBenchmarkPage())
+          ]),
+      Demo(
+          title: 'AM-P02: 原生点位与缓存 PNG 对照',
+          category: DemoCategory.basic,
+          group: '性能对照',
+          subtitle: '同一批数据切换方案，200 / 500 / 1000 点，可加 Flutter 负载',
+          steps:
+              '真机 Profile 构建。选择方案和点数后点“推送新价格”，每次都是缓存未命中的新价格；切换方案会清空点位和两边缓存。内存对比请每次切换方案后重启 App。',
+          slug: 'marker-compare',
+          configurations: <DemoConfiguration>[
+            DemoConfiguration(
+                buildRoute: (BuildContext context) =>
+                    const MarkerComparePage())
           ]),
     ];
 

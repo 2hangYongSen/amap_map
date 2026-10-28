@@ -25,6 +25,7 @@
     return self;
 }
 - (void)addAnnotation:(id<MAAnnotation>)a { [_added addObject:a]; }
+- (void)addAnnotations:(NSArray *)as { [_added addObjectsFromArray:as]; }
 - (void)removeAnnotation:(id<MAAnnotation>)a {
     [_added removeObject:a];
     [_views removeObjectForKey:a];

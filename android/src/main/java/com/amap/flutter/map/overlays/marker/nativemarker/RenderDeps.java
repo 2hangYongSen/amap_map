@@ -15,8 +15,12 @@ public final class RenderDeps {
     public long decodeBudget = DecodeBudget.DEFAULT_BYTES;
     public long cacheBudget = RenderCache.DEFAULT_BUDGET;
     public long frameBudgetNanos = FrameApplier.DEFAULT_BUDGET_NANOS;
-    /** 后台同时执行的绘制任务数；生产为 1（单线程执行器），测试可调大验证计数 */
-    public int maxRunning = 1;
+    /**
+     * 同时派发到后台队列的绘制任务数（在途上限）。后台线程画完一个直接取下一个，不等主线程；
+     * 派发后再提升优先级的任务最多排在这么多个之后，所以不宜过大（§8.2）
+     */
+    public int maxRunning = DEFAULT_MAX_RUNNING;
+    public static final int DEFAULT_MAX_RUNNING = 8;
     /** 调试日志出口；默认丢弃 */
     public DiagLog log = msg -> { };
     /** 销毁后等待 running 任务归还的时限（R-DISP-4） */
