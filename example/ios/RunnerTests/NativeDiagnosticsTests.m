@@ -179,6 +179,7 @@ static NSDictionary *Icon(NSString *id_, NSString *asset) {
     XCTAssertEqualObjects(t[@"markerId"], @"A");
     XCTAssertGreaterThanOrEqual([t[@"c2Ms"] doubleValue], [t[@"c1Ms"] doubleValue]);
     XCTAssertNotNil(_c.topAnnotation, @"c2 时选中外观已提交");
+    XCTAssertNotNil(t[@"drawCount"], @"点击回报带 drawCount");
 }
 
 // T-TIME-5（旧路径）：非 selectable 点的 tapId 由 Dart 随 diagTapId 带回，图标更新后记 c2

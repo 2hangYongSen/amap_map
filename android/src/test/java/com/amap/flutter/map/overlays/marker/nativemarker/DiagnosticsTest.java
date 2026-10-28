@@ -241,11 +241,25 @@ public class DiagnosticsTest {
         assertEquals("native", t.get("path"));
         assertEquals(200.0, d(t.get("c1Ms")), 1e-9);
         assertEquals(216.0, d(t.get("c2Ms")), 1e-9);
+        assertEquals("选中态已预热：c1→c2 不绘制（§13.5）", 0L, t.get("drawCount"));
         // 再点一次（retap 取消）：恢复普通态后记第二条
         h.manager.onMarkerTap("A");
         h.loop.drain();
         assertEquals(2, taps().size());
+        assertEquals(0L, taps().get(1).get("drawCount"));
         assertTrue(d(taps().get(1).get("c2Ms")) >= d(taps().get(1).get("c1Ms")));
+    }
+
+    // T-SEL-7 的诊断依据：选中态未预热时点击，c1→c2 期间绘制了选中态（drawCount ≥ 1）
+    @Test
+    public void tapBeforePrewarmCountsDraw() {
+        start(true);
+        h.add(Payloads.selectableZ("A", "a", 1, 99));
+        h.manager.onMarkerTap("A"); // 普通态与预热都还没跑
+        h.loop.drain();
+        Map<String, Object> t = taps().get(0);
+        assertEquals("native", t.get("path"));
+        assertTrue("点击后才绘制选中态", (Long) t.get("drawCount") >= 1L);
     }
 
     // 点击非 selectable 的 native 点：外观本就一致，c2 不会被记录为“等外观”（只走旧路径）

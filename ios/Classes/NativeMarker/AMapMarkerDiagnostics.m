@@ -28,6 +28,8 @@ static const NSUInteger kMaxTaps = 32;
 @property (nonatomic, assign) NSInteger tapId;
 @property (nonatomic, copy) NSString *markerId;
 @property (nonatomic, assign) double c1;
+/// c1 时的布局未命中计数；c2 时回报差值（iOS 按布局未命中计绘制）
+@property (nonatomic, assign) NSInteger misses0;
 @end
 
 @implementation AMapDiagTap
@@ -147,6 +149,7 @@ static const NSUInteger kMaxTaps = 32;
     t.tapId = ++_tapSeq;
     t.markerId = markerId;
     t.c1 = [self nowMs];
+    t.misses0 = self.layoutMisses;
     [_taps addObject:t];
     if (_taps.count > kMaxTaps) {
         [_taps removeObjectAtIndex:0];
@@ -190,6 +193,7 @@ static const NSUInteger kMaxTaps = 32;
     [_events event:@"markers#tapApplied" args:@{
         @"tapId": @(t.tapId), @"markerId": t.markerId,
         @"c1Ms": @(t.c1), @"c2Ms": @([self nowMs]), @"path": path,
+        @"drawCount": @(self.layoutMisses - t.misses0),
     }];
 }
 

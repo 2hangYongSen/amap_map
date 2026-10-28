@@ -41,6 +41,8 @@ final class FakeImages {
     /** 每张图 w×h，占用 bytesPer；failing 中的 id 解码失败 */
     static final class Decoder implements ImageDecoder {
         final Set<String> failing = new HashSet<>();
+        /** 按 asset 名失败（模拟 asset 不可读） */
+        final Set<String> failingAssets = new HashSet<>();
         /** 这些 id 解码时抛 OutOfMemoryError（Error 不得让后台线程崩溃） */
         final Set<String> oom = new HashSet<>();
         final List<Image> produced = new ArrayList<>();
@@ -56,7 +58,7 @@ final class FakeImages {
             if (oom.contains(s.id)) {
                 throw new OutOfMemoryError("解码 OOM: " + s.id);
             }
-            if (failing.contains(s.id)) {
+            if (failing.contains(s.id) || (s.asset != null && failingAssets.contains(s.asset))) {
                 throw new IllegalStateException("asset 暂不可读: " + s.id);
             }
             Image img = new Image(s.id, w, h, bytesPer);

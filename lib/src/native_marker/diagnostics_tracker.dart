@@ -142,5 +142,6 @@ MarkerTapReport? markerTapReportFromMap(Map<Object?, Object?> raw) {
     c1Ms: _d(raw['c1Ms']),
     c2Ms: _d(raw['c2Ms']),
     path: raw['path'] == 'native' ? MarkerTapPath.native : MarkerTapPath.icon,
+    drawCount: _i(raw['drawCount']),
   );
 }

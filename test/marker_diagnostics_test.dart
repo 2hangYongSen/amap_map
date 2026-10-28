@@ -211,9 +211,11 @@ void main() {
         'c1Ms': 100.0,
         'c2Ms': 161.5,
         'path': 'icon',
+        'drawCount': 2,
       }));
       expect(taps.single.c1ToC2Ms, closeTo(61.5, 1e-9));
       expect(taps.single.path, MarkerTapPath.icon);
+      expect(taps.single.drawCount, 2);
     });
 
     test('T-TIME-3 关闭时：不带 diagTapId、不交付回执、无诊断通道调用', () async {

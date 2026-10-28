@@ -1,8 +1,8 @@
 PODS:
   - AMap3DMap (10.1.200):
     - AMapFoundation (>= 1.8.0)
-  - amap_map (1.0.8):
-    - AMap3DMap
+  - amap_map (1.1.0-native.1):
+    - AMap3DMap (= 10.1.200)
     - Flutter
   - AMapFoundation (1.8.2)
   - Flutter (1.0.0)
@@ -34,7 +34,7 @@ EXTERNAL SOURCES:
 
 SPEC CHECKSUMS:
   AMap3DMap: 06a11a83072857d6076c14060b2e1a676182e84d
-  amap_map: a681a1441e8b707efafde356c3cd388148495524
+  amap_map: d4cdde06e925748588dd1ff99c48efe7d0854e8c
   AMapFoundation: 9885c48fc3a78fdfb84a0299a2293e56ea3c9fec
   Flutter: cabc95a1d2626b1b06e7179b784ebcf0c0cde467
   integration_test: 4a889634ef21a45d28d50d622cf412dc6d9f586e

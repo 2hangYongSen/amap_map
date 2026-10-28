@@ -201,13 +201,16 @@ public final class Diagnostics {
         final int tapId;
         final String markerId;
         final double c1;
+        /** c1 时的累计绘制次数；c2 时回报差值（§13.5 缓存命中点击不绘制） */
+        final long draws0;
         String path = PATH_ICON;
         boolean awaiting = false;
 
-        Tap(int tapId, String markerId, double c1) {
+        Tap(int tapId, String markerId, double c1, long draws0) {
             this.tapId = tapId;
             this.markerId = markerId;
             this.c1 = c1;
+            this.draws0 = draws0;
         }
     }
 
@@ -216,7 +219,7 @@ public final class Diagnostics {
         if (!enabled) {
             return null;
         }
-        Tap t = new Tap(++tapSeq, markerId, nowMs());
+        Tap t = new Tap(++tapSeq, markerId, nowMs(), source.draws());
         taps.put(t.tapId, t);
         if (taps.size() > MAX_TAPS) {
             taps.remove(taps.keySet().iterator().next());
@@ -272,6 +275,7 @@ public final class Diagnostics {
         m.put("c1Ms", t.c1);
         m.put("c2Ms", nowMs());
         m.put("path", t.path);
+        m.put("drawCount", source.draws() - t.draws0);
         events.event("markers#tapApplied", m);
     }
 

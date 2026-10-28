@@ -8,7 +8,8 @@ public final class ImageEntry {
     public enum Ref { DESIRED, QUEUED, RUNNING }
 
     public final String id;
-    public final ImageSource source;
+    /** failed 后重新登记时换成最新来源（与 iOS 一致）；只在主线程写 */
+    public ImageSource source;
     State state = State.PENDING;
     /** release 或 resync 不在集合内后置位；再次 imagesToAdd 时清除 */
     boolean releasing = false;
