@@ -35,7 +35,7 @@ else
   xcrun devicectl device process launch --device "$dev" --terminate-existing "$bundle" >/dev/null
   end=$((SECONDS + ${S18_TIMEOUT:-3600}))
   while [ $SECONDS -lt $end ]; do
-    sleep 15
+    sleep "${S18_POLL:-3}"  # 轮询间隔（秒）
     fetch
     # 只看本入口的结果文件（tmp/s18 里可能还有其他入口上次留下的文件）
     if grep -qsE '^S18 (PASS|FAIL)' "$out/s18/$name.txt"; then break; fi
