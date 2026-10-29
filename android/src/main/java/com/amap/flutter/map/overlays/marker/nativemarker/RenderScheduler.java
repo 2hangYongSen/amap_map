@@ -236,12 +236,18 @@ final class RenderScheduler {
 
     /** 该优先级是否还有未完成的任务（排队或执行中） */
     boolean hasActive(int priority) {
+        return countActive(priority) > 0;
+    }
+
+    /** 某优先级未完成（排队 + 在途）的任务数 */
+    int countActive(int priority) {
+        int n = 0;
         for (RenderTask t : tasks.values()) {
             if (t.priority == priority) {
-                return true;
+                n++;
             }
         }
-        return false;
+        return n;
     }
 
     boolean hasQueued(int priority) {

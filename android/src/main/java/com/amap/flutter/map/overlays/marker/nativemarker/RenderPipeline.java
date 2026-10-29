@@ -1,6 +1,7 @@
 package com.amap.flutter.map.overlays.marker.nativemarker;
 
 import java.util.ArrayList;
+import java.util.List;
 
 /**
  * 接收路径的核心（§8.2）：ensure 唯一入口、先接续后撤销（R-GEN-2）、结果逐个校验（R-GEN-3）、
@@ -197,6 +198,33 @@ final class RenderPipeline implements RenderScheduler.Callback, FrameApplier.Sin
         listener.applied();
     }
 
+    /**
+     * 一批新增项：校验同 apply；需要新建 Marker 的普通态一次 addNativeMarkers，
+     * 其余（已有 Marker、选中相关、备用）逐个走 applyValid。完成通知整批只发一次。
+     */
+    @Override
+    public void applyAdds(List<ApplyItem> items) {
+        List<ApplyItem> batch = new ArrayList<>(items.size());
+        for (ApplyItem it : items) {
+            PointTable.Entry e = it.point;
+            e.applying[PointTable.Entry.role(it.selected)] = null;
+            cache.dropPending(it.icon);
+            it.dropped = true;
+            if (points.get(e.id) != e || !e.isValid(it.generation, it.selected, it.icon.key)) {
+                continue;
+            }
+            if (it.selected || wantsSelected(e) || host.hasMarker(e.id)) {
+                applyValid(e, it); // 少见情况：保持逐个处理的原有分支
+            } else {
+                batch.add(it);
+            }
+        }
+        if (!batch.isEmpty()) {
+            addBatch(batch);
+        }
+        listener.applied();
+    }
+
     /** 按当前 selectedId 与 role 决定显示、保留或丢弃（R-CACHE-6 末条） */
     private void applyValid(PointTable.Entry e, ApplyItem it) {
         boolean sel = wantsSelected(e);
@@ -232,6 +260,40 @@ final class RenderPipeline implements RenderScheduler.Callback, FrameApplier.Sin
         // R-CACHE-1：旧条目在 setIcon(new) 返回之后才减 1
         if (old != null) {
             cache.dropDisplay(old);
+        }
+        cache.enforceBudget();
+    }
+
+    /** 批量新建普通态 Marker；引用规则与 applyValid 相同，SDK 抛异常按整批失败 */
+    private void addBatch(List<ApplyItem> batch) {
+        List<FullMarkerOptions> opts = new ArrayList<>(batch.size());
+        List<NativeIcon> nis = new ArrayList<>(batch.size());
+        List<Boolean> sels = new ArrayList<>(batch.size());
+        for (ApplyItem it : batch) {
+            cache.addDisplay(it.icon); // 先登记新显示，失败再撤回
+            opts.add(it.point.desired);
+            nis.add(it.icon.icon());
+            sels.add(false);
+        }
+        try {
+            host.addNativeMarkers(opts, nis, sels);
+        } catch (RuntimeException ex) {
+            for (ApplyItem it : batch) {
+                cache.dropDisplay(it.icon);
+                it.point.failedKey[0] = it.icon.key;
+                listener.applyFailed(it.point.id, String.valueOf(ex.getMessage()));
+            }
+            return;
+        }
+        for (ApplyItem it : batch) {
+            PointTable.Entry e = it.point;
+            RenderCache.Entry old = e.shown;
+            e.shown = it.icon;
+            e.shownSelected = false;
+            releaseRetained(e);
+            if (old != null) {
+                cache.dropDisplay(old); // R-CACHE-1：新图标交给 SDK 之后才归还旧的
+            }
         }
         cache.enforceBudget();
     }

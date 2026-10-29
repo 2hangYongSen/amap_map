@@ -127,7 +127,7 @@ public class NativeMarkerRenderTest {
         assertEquals("全部画完：同一帧放完", 10, h.host.count("add:"));
     }
 
-    // §8.4：攒超过 300ms 仍有普通态没画完，先按每帧预算放已画好的
+    // §8.4：攒超过上限（10 点取最短 300ms）仍有普通态没画完，整批放已画好的，之后每 150ms 一批
     @Test
     @SuppressWarnings("unchecked")
     public void holdTimesOutAndAppliesByBudget() {
@@ -149,14 +149,86 @@ public class NativeMarkerRenderTest {
         Runnable stuck = h.loop.bg.poll();
         h.loop.frame();
         assertEquals("攒着：还有 1 个没画完", 0, h.host.count("add:"));
-        h.loop.now += FrameApplier.HOLD_TIMEOUT_NANOS;
+        h.loop.now += FrameApplier.HOLD_MIN_NANOS - 1_000_000;
         h.loop.frame();
-        assertEquals("超时：按 4ms 预算放", 4, h.host.count("add:"));
+        assertEquals("未到上限：不放", 0, h.host.count("add:"));
+        h.loop.now += 2_000_000;
         h.loop.frame();
-        assertEquals(8, h.host.count("add:"));
+        assertEquals("超时：已画好的 9 个整批放，不按 4ms 拆", 9, h.host.count("add:"));
         stuck.run();
         h.loop.drain();
         assertEquals(10, h.host.count("add:"));
+    }
+
+    // 上限按点数算：200 点 = 600ms，超过 300ms 仍在攒
+    @Test
+    @SuppressWarnings("unchecked")
+    public void holdLimitScalesWithCount() {
+        Map<String, Object>[] ms = new Map[200];
+        for (int i = 0; i < 200; i++) {
+            ms[i] = Payloads.nativeMarker("t" + i, "k" + i);
+        }
+        h.add(ms);
+        h.loop.runMain();
+        h.loop.runBg(); // 画完一部分，仍有普通态未完成
+        h.loop.runMain();
+        h.loop.frame();
+        h.loop.now += 500_000_000L;
+        h.loop.frame();
+        assertEquals("500ms < 600ms：继续攒", 0, h.host.count("add:"));
+        h.loop.drain();
+        assertEquals("全部画完：一次放完", 200, h.host.count("add:"));
+        assertEquals("200 个新增只调用一次批量接口", Collections.singletonList(200), h.host.batchSizes);
+    }
+
+    // 同一次 update 删、改、加：删除立即执行，修改逐个 setIcon，新增一次批量
+    @Test
+    public void mixedAddChangeRemoveUsesOneBatchForAdds() {
+        h.add(Payloads.nativeMarker("keep", "k0"), Payloads.nativeMarker("gone", "g0"));
+        h.loop.drain();
+        h.host.batchSizes.clear();
+        Map<String, Object> u = Payloads.update(99, new java.util.ArrayList<Object>(
+                Collections.singletonList("gone")), Payloads.nativeMarker("keep", "k1"));
+        u.put("markersToAdd", Arrays.asList(Payloads.nativeMarker("n1", "a"), Payloads.nativeMarker("n2", "b")));
+        h.manager.update(u);
+        assertFalse("删除不等绘制", h.host.hasMarker("gone"));
+        h.loop.drain();
+        assertEquals(Collections.singletonList(2), h.host.batchSizes);
+        assertEquals("修改走 setIcon，不重建", 1, h.host.count("setIcon:keep"));
+        assertEquals(h.point("keep").shown().descriptor, h.iconOf("keep"));
+        assertEquals(h.point("n1").shown().descriptor, h.iconOf("n1"));
+    }
+
+    // 批量新增失败：每个点报一次 applyFailed，显示引用撤回，key 不变不自动重试
+    @Test
+    public void batchAddFailureReportsEachPoint() {
+        h.manager.attach(); // 握手后错误才发事件
+        h.host.failNextBatch = true;
+        h.add(Payloads.nativeMarker("a", "a"), Payloads.nativeMarker("b", "b"));
+        h.loop.drain();
+        assertFalse(h.host.hasMarker("a"));
+        assertFalse(h.host.hasMarker("b"));
+        int failed = 0;
+        for (Map<String, Object> e : h.events("marker#nativeError")) {
+            if (NativeMarkerManager.ERR_APPLY_FAILED.equals(e.get("code"))) failed++;
+        }
+        assertEquals(2, failed);
+        assertNull(h.point("a").shown());
+        assertEquals(0, h.r().cache.get(h.point("a").normalKey()).displayRefs());
+    }
+
+    // 批量加入期间点被删除：已丢弃项不进批量，不留下 Marker
+    @Test
+    public void removedBeforeFlushIsNotAdded() {
+        h.add(Payloads.nativeMarker("a", "a"), Payloads.nativeMarker("b", "b"));
+        h.loop.runMain();
+        h.loop.runBg();
+        h.loop.runMain(); // 已画完、在队列里等帧
+        h.remove("a");
+        h.loop.drain();
+        assertFalse(h.host.hasMarker("a"));
+        assertTrue(h.host.hasMarker("b"));
+        assertEquals(Collections.singletonList(1), h.host.batchSizes);
     }
 
     // R-GEN-6 immediate 删除：remove() 之后才归还显示引用，期望引用与资源一起释放

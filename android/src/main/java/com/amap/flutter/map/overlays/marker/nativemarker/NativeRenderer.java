@@ -57,7 +57,7 @@ final class NativeRenderer implements ImageRegistry.Listener, RenderPipeline.Lis
         scheduler = new RenderScheduler(registry, d.runner, d.painter, d.densityUnits, d.maxRunning);
         applier = new FrameApplier(d.clock, d.frameBudgetNanos);
         // 普通态攒到全部画完再一次放（§8.4），不等 P2 预热
-        applier.setNormalPending(() -> scheduler.hasActive(RenderTask.P1));
+        applier.setNormalPending(() -> scheduler.countActive(RenderTask.P1));
         pipeline = new RenderPipeline(points, cache, scheduler, applier, host, d.icons, selection);
         pipeline.setListener(this);
     }
