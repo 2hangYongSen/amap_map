@@ -130,7 +130,7 @@ class _MarkerComparePageState extends State<MarkerComparePage> {
           '到达→应用（估算）${_ms(r.t0t4)}ms',
       '原生绘制 ${r.draws} 次，传输 ${(r.bytes / 1024).toStringAsFixed(1)}KB',
       r.frames == null
-          ? 'Flutter 帧统计中（${CompareController.jankWindow.inSeconds}s）…'
+          ? 'Flutter 帧统计中（到回执后 ${CompareController.jankTail.inSeconds}s）…'
           : '${r.load.label}：${r.frames} 帧，卡顿 ${r.jankBuild! + r.jankRaster!}'
               '（界面 ${r.jankBuild} / 绘制 ${r.jankRaster}），最长 ${_ms(r.worstFrameMs)}ms',
     ].join('\n');

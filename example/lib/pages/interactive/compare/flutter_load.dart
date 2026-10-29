@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:math';
 import 'dart:ui' as ui;
 
@@ -109,7 +110,7 @@ class _Particles extends CustomPainter {
   bool shouldRepaint(_Particles old) => old.t != t || old.n != n;
 }
 
-/// Flutter 帧耗时统计：统计 vsync 落在 [start, start+window] 内、构建或绘制超过一帧预算的帧。
+/// Flutter 帧耗时统计：统计 vsync 落在 [start, finish] 之间、构建或绘制超过一帧预算的帧。
 /// 引擎按批（约 1 秒）上报帧耗时，所以按帧自带的 vsync 时间戳过滤，而不是按回调到达时间。
 /// 窗口起点取下一帧的 [SchedulerBinding.currentSystemFrameTimeStamp]（引擎下发的原始 vsync 时刻），
 /// 与 [ui.FramePhase.vsyncStart] 同一个时钟，不和 Dart 的 Stopwatch 混用。
@@ -124,21 +125,36 @@ class JankMeter {
   // 起点确定前为最大值，丢弃所有帧
   int _from = 1 << 62, _to = 0;
 
-  /// 开始一个统计窗口；窗口结束后再等约 1.5 秒，引擎才会把最后一批帧报上来
-  void start(Duration window) {
+  /// 开始一个统计窗口（终点由 [finish] 定）；结束后再等约 1.5 秒，引擎才会把最后一批帧报上来
+  void start() {
     frames = jankBuild = jankRaster = 0;
     worstMs = 0;
     _from = 1 << 62;
+    _to = 1 << 62;
     final SchedulerBinding b = SchedulerBinding.instance;
     b.scheduleFrameCallback((_) {
       _from = b.currentSystemFrameTimeStamp.inMicroseconds;
-      _to = _from + window.inMicroseconds;
     });
     b
       ..scheduleFrame()
       ..removeTimingsCallback(_onTimings)
       ..addTimingsCallback(_onTimings);
   }
+
+  /// 窗口终点取下一帧的 vsync 时刻（与起点同一时钟）；主线程被占满时要等帧恢复才返回
+  Future<void> finish() {
+    final Completer<void> done = Completer<void>();
+    final SchedulerBinding b = SchedulerBinding.instance;
+    b.scheduleFrameCallback((_) {
+      _to = b.currentSystemFrameTimeStamp.inMicroseconds;
+      done.complete();
+    });
+    b.scheduleFrame();
+    return done.future;
+  }
+
+  /// 窗口时长（毫秒）
+  double get windowMs => (_to - _from) / 1000;
 
   void stop() => SchedulerBinding.instance.removeTimingsCallback(_onTimings);
 

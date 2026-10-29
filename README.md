@@ -24,12 +24,28 @@
 
 ## 特性
 
-- 地图展示：普通、卫星、夜间等地图类型，自定义样式，多语言，路况、3D 建筑、底图标注开关。
-- 交互：缩放、平移、旋转、倾斜手势，单击、长按、POI 点击、相机移动回调。
-- 覆盖物：Marker（含 InfoWindow）、Polyline（含纹理、大地曲线）、Polygon。
-- 定位：定位蓝点与位置回调。
-- 控制：相机移动、截图、坐标转换、清理缓存、审图号查询。
-- 原生点位：文字、图标、形状背景、图片背景（固定尺寸与九宫格）在原生端绘制，Flutter 不再为每个点生成 PNG。
+下表列出插件已适配的高德地图能力，除特别注明外 Android 与 iOS 都支持。
+
+| 分类 | 已适配 | 对应接口 |
+| --- | --- | --- |
+| 地图类型 | 普通、卫星、夜间、导航、公交 | `mapType` |
+| 地图样式 | 自定义样式（传入高德控制台下载的 `style.data`、`style_extra.data`） | `customStyleOptions` |
+| 语言 | 中文、英文（英文只在普通地图生效，且不能与自定义样式同时用） | `mapLanguage` |
+| 图层开关 | 路况、3D 建筑、底图文字标注、POI 可点击 | `trafficEnabled` 等 |
+| 控件 | 指南针、比例尺、logo 位置与边距（iOS 由插件模拟） | `compassEnabled` 等 |
+| 手势 | 缩放、平移、旋转、倾斜，可分别开关 | `*GesturesEnabled` |
+| 范围限制 | 缩放级别范围、地理范围 | `minMaxZoomPreference`、`limitBounds` |
+| 相机 | 移到指定位置、缩放、平移、适配范围，可带动画 | `moveCamera` + `CameraUpdate` |
+| 地图事件 | 单击、长按、POI 点击、相机移动中与移动结束 | `onTap` 等 |
+| 定位 | 定位蓝点样式、位置回调 | `myLocationStyleOptions`、`onLocationChanged` |
+| Marker | 位置、图标（默认色、asset、字节）、锚点、旋转、透明度、层级、显隐、拖动、点击 | `Marker` |
+| InfoWindow | 标题与摘要、自定义 Widget 气泡 | `infoWindow`、`infoWindowAdapter` |
+| 原生点位 | 文字气泡、形状与图片背景、九宫格、原生选择（本 fork 新增，见[原生点位](#原生点位)） | `Marker.nativePresentation` |
+| Polyline | 颜色、宽度、透明度、纹理、大地曲线、虚线、拐角与线头样式、点击 | `Polyline` |
+| Polygon | 填充色、描边色与宽度、拐角样式 | `Polygon` |
+| 工具 | 截图、经纬度与屏幕坐标互转、清理缓存、审图号查询 | `AMapController` |
+
+**暂未适配**：圆（Circle）、热力图、点聚合、海量点、图片与瓦片图层、室内地图，以及搜索、路线规划、导航等地图以外的 SDK。需要时可以在原生端自行接入，或提 Issue。
 
 ## 平台与版本
 
@@ -151,7 +167,41 @@ class _MapPageState extends State<MapPage> {
 
 给 `Marker` 设置 `nativePresentation` 后，点位由原生端按样式绘制，不再需要 Flutter 先把每个点画成 PNG；旧的 `icon` 用法不受影响。
 
-> Android 与 iOS 均已支持形状、图片背景（含九宫格）、图标、资源降级与恢复、原生选择与置顶、集合替换过渡和诊断计时。双端真机验收见 [S18 报告](docs/superpowers/experiments/2026-10-27-s18/report.md)。
+#### 支持的功能
+
+以下功能 Android 与 iOS 都支持，并已通过双端真机验收。
+
+| 分类 | 功能 |
+| --- | --- |
+| 内容 | 单行文字、前置图标（`iconId`），两者可单用或组合；文字超出可用宽度时尾部省略为“…” |
+| 文字样式 | 字号、字重（w400～w700）、颜色、左 / 中 / 右对齐、内边距 |
+| 尺寸 | 自适应文字宽度，或用 `width` / `height` 固定，`minWidth` / `maxWidth` 限制范围 |
+| 形状背景 | 圆形、圆角矩形；填充色、描边色与描边宽度 |
+| 图片背景 | 固定尺寸、按图片原始尺寸、九宫格拉伸（`capInsets`） |
+| 装饰 | 底部居中箭头、单层阴影（形状和图片背景都可以用） |
+| 锚点 | 主体中心、箭头尖端、自定义比例 |
+| 图片资源 | asset 或字节；加载失败自动降级显示，asset 自动重试，恢复后换回正常外观 |
+| 选择 | 点击在原生端切换选中样式，选中点可置顶；支持代码设置选中、点地图空白或重复点击取消 |
+| 集合替换 | 整批切换时可保留旧点，等新点就绪后再替换（`replaceWhenReady`） |
+| 诊断 | 更新与点击的耗时回执、时钟校准、清缓存，用于性能测试 |
+| 兼容 | 同一地图上可与旧的 `icon` 点位混用 |
+
+暂不支持：多行文字、渐变填充、多层阴影、动画。需要渐变或纹理时，用图片背景实现。
+
+#### 性能对比
+
+与“Flutter 端生成 PNG + 缓存”的普通 Marker 对比（P50，无负载）：
+
+| 指标 | Android 原生 | Android PNG | iOS 原生 | iOS PNG |
+| --- | --- | --- | --- | --- |
+| 200 点全部显示 | 343～440ms | 1466～1501ms | 137ms | 411ms |
+| 1000 点全部显示 | 1967～4466ms | 8642～8811ms | 457ms | 2451ms |
+| 点击到选中 | 10.6～12.4ms | 18.6～19.4ms | 3.4ms | 34.0ms |
+| 1000 点内存峰值 | 332～354MB | 487～506MB | 225MB | 461MB |
+
+- 测试设备：Android 华为 BRE-AL80（60Hz，Profile），iOS iPhone 12 mini（60Hz，Release）。Android 有两次运行，给出范围；内存 Android 为 PSS，iOS 为 RSS。
+- 200 点以内两种方案推送时丢帧相当。1000 点时高德 SDK 放点会占用主线程约 0.35 秒，建议同屏点数控制在 200 以内，更多时用聚合或只加载屏幕内的点。
+- Android 的 PNG 方案清空点位后内存几乎不回落（旧路径生成的位图没有回收），原生方案没有这个问题。
 
 #### 基本用法
 
@@ -251,7 +301,7 @@ AMapWidget(
 
 #### 集合替换过渡
 
-整批切换图层时，默认（`MarkerTransition.immediate()`）旧点立即删除、新点逐帧出现，中间可能短暂缺点。改用 `replaceWhenReady` 后，旧点保持可见、可点击，直到新点全部显示或超时：
+整批切换图层时，默认（`MarkerTransition.immediate()`）旧点立即删除，新点绘制完成后一起出现，Android 上中间会短暂没有点（200 点约 0.4 秒）。改用 `replaceWhenReady` 后，旧点保持可见、可点击，直到新点全部显示或超时：
 
 ```dart
 markerTransition: const MarkerTransition.replaceWhenReady(
@@ -354,23 +404,45 @@ Flutter 的触摸仲裁是另一个阶段。[引擎 `FlutterPlatformViews.mm`][t
 
 ## 开发与测试
 
+### 单元测试
+
 ```bash
-flutter test                         # 插件 Dart 单测
-(cd example && flutter test)         # 示例应用 Widget 测试
-source example/tool/env.sh && jvm_test   # Android JVM 单测
+flutter test                                                  # 插件 Dart 单测
+(cd example && flutter test)                                  # 示例应用 Widget 测试
+(cd example/android && ./gradlew :amap_map:testDebugUnitTest) # Android JVM 单测
 ```
 
-真机集成测试（需要已连接的设备，结果在 `example/build/s18_android/`、`example/build/s18_ios/`）：
+iOS XCTest 在 Xcode 中打开 `example/ios/Runner.xcworkspace`，运行 `RunnerTests`。
+
+### 真机集成测试
+
+需要已连接的设备，手机亮屏、解锁。结果输出到 `example/build/s18_android/`、`example/build/s18_ios/`，属于临时目录，可能被清理。
 
 ```bash
 cd example
 tool/s18_android_run.sh native_marker_test.dart <设备 id>       # 资源恢复、页面进出、旧路径回归
 tool/s18_android_run.sh native_marker_tap_test.dart <设备 id>   # 真实点击（主机 adb input tap）
-tool/s18_android_run.sh native_marker_perf_test.dart <设备 id>  # §13.4 性能场景
+tool/s18_android_run.sh native_marker_perf_test.dart <设备 id>  # 性能场景
 tool/s18_ios_run.sh native_marker_test.dart <udid>
 tool/s18_ios_run.sh native_marker_tap_test.dart <udid> S14UITests/S14UITests/testS18Commands
 tool/s18_ios_run.sh native_marker_perf_test.dart <udid>
 ```
+
+### 原生点位与 PNG 对比测试
+
+一条命令跑完推送、点击、两种方案的内存，结束后在 `example/build/compare/<平台>_<时间>/summary.md` 生成汇总。两个平台可各开一个终端同时跑。
+
+```bash
+cd example
+tool/compare_all.sh android <设备 id>   # 默认推送 10 轮、200 与 1000 点、内存 10 批
+tool/compare_all.sh ios <udid>
+RUNS=1 MEM_ROUNDS=2 COUNTS=200 tool/compare_all.sh android <设备 id>   # 冒烟
+ONLY="tap mem_png" tool/compare_all.sh android <设备 id>               # 只跑部分场景
+```
+
+Android 需要在系统设置中锁定屏幕刷新率。
+
+### 提交前检查
 
 提交前确认 `flutter analyze` 没有新增问题。版本记录见 [CHANGELOG.md](CHANGELOG.md)，问题反馈请提交 [Issue](https://github.com/kuloud/amap_map/issues)。
 
