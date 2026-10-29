@@ -1,12 +1,15 @@
 package com.amap.flutter.map.overlays.marker.nativemarker;
 
 import java.util.ArrayDeque;
+import java.util.ArrayList;
+import java.util.List;
 
 /**
  * 主线程应用（§8.4）：
  * - 选中相关项每帧按 4ms 预算立即放；
  * - 普通项（新增、修改）攒到普通态任务全部画完，在同一帧一次放完，地图只重画一次；
- * - 攒了超过 300ms 仍有普通态没画完，剩余项改为每帧按预算放，避免一张慢图拖住所有点。
+ * - 攒的上限按本批点数算（每点 3ms，300ms～1s）；超时仍没画完，改为每 150ms 把已画好的一次放完，
+ *   避免一张慢图拖住所有点，也不会一个个冒出来。
  * 删除在 update 内同步执行或由过渡策略延迟，不经过这里。
  */
 final class FrameApplier {
@@ -15,6 +18,9 @@ final class FrameApplier {
     interface Sink {
         /** 应用一项；已丢弃的项不会传进来 */
         void apply(ApplyItem item);
+
+        /** 一次应用一批新增项（生产实现一次 addMarkers）；已丢弃的项不会传进来 */
+        void applyAdds(List<ApplyItem> items);
     }
 
     private final FrameClock clock;
@@ -28,14 +34,21 @@ final class FrameApplier {
     private int overBudgetFrames = 0;
     private boolean disposed = false;
 
-    /** 普通项最多攒这么久；超时后按每帧预算先放已画好的 */
-    static final long HOLD_TIMEOUT_NANOS = 300_000_000L;
+    /** 普通项最多攒多久 = 本批点数 × 每点时长，夹在 [最短, 最长] 内；超时后整批放已画好的 */
+    static final long HOLD_PER_ITEM_NANOS = 3_000_000L;
+    static final long HOLD_MIN_NANOS = 300_000_000L;
+    static final long HOLD_MAX_NANOS = 1_000_000_000L;
+    /** 超时后每隔这么久把已画好的一次放完（不逐帧放，避免点一个个冒出来） */
+    static final long BATCH_INTERVAL_NANOS = 150_000_000L;
 
-    /** 后台是否还有未完成的普通态任务 */
+    /** 后台未完成的普通态任务数 */
     interface NormalPending {
-        boolean get();
+        int get();
     }
-    private NormalPending normalPending = () -> false;
+    private NormalPending normalPending = () -> 0;
+    /** 本批的攒点上限、上一次整批放的时刻 */
+    private long holdLimit = HOLD_MIN_NANOS;
+    private long lastFlush = 0;
     /** 是否在攒、第一项开始攒的时刻（nanoTime 可以是任意值，不能用 0 当“没在攒”） */
     private boolean holding = false;
     private long holdSince = 0;
@@ -75,25 +88,26 @@ final class FrameApplier {
             repost();
             return;
         }
-        boolean pending = normalPending.get();
-        if (!pending) {
+        int pending = normalPending.get();
+        if (pending == 0) {
             timedOut = false;
-        } else if (!timedOut && holding && start - holdSince >= HOLD_TIMEOUT_NANOS) {
-            timedOut = true; // 有任务画得慢：不再等，先放已画好的
+        } else if (!timedOut && holding && start - holdSince >= holdLimit) {
+            timedOut = true; // 画得比预期慢：不再等，开始整批放已画好的
+            lastFlush = start - BATCH_INTERVAL_NANOS; // 超时这一帧立即放第一批
         }
-        if (!pending) {
-            // 普通态全部画完：一次放完，地图只重画一次
-            drain(addQ, start, false);
+        if (pending == 0 || (timedOut && start - lastFlush >= BATCH_INTERVAL_NANOS)) {
+            // 全部画完，或超时后到了放下一批的时刻：已画好的一次放完，地图只重画一次
+            drainAdds(); // 新增一次批量加，再逐个修改（新增先于修改，§8.4）
             drain(changeQ, start, false);
-            holding = false;
-        } else if (timedOut) {
-            drain(addQ, start, true);
-            if (clock.nanoTime() - start < budgetNanos) {
-                drain(changeQ, start, true);
+            lastFlush = start;
+            if (pending == 0) {
+                holding = false;
             }
         } else if (!holding && addQ.size() + changeQ.size() > 0) {
-            holding = true; // 开始攒
+            holding = true; // 开始攒：按本批点数定上限
             holdSince = start;
+            long n = pending + addQ.size() + changeQ.size();
+            holdLimit = Math.max(HOLD_MIN_NANOS, Math.min(HOLD_MAX_NANOS, n * HOLD_PER_ITEM_NANOS));
         }
         if (addQ.isEmpty() && changeQ.isEmpty()) {
             holding = false; // 项被撤销或已放完：下一批重新计时
@@ -122,6 +136,20 @@ final class FrameApplier {
             if (budgeted && clock.nanoTime() - start >= budgetNanos) {
                 return;
             }
+        }
+    }
+
+    /** 新增队列整体出队，跳过已丢弃项，剩余一次交给 sink */
+    private void drainAdds() {
+        List<ApplyItem> batch = new ArrayList<>(addQ.size());
+        ApplyItem item;
+        while ((item = addQ.poll()) != null) {
+            if (!item.dropped) {
+                batch.add(item);
+            }
+        }
+        if (!batch.isEmpty() && !disposed) {
+            sink.applyAdds(batch);
         }
     }
 

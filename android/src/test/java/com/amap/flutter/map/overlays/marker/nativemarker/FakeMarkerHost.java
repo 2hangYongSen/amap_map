@@ -92,6 +92,23 @@ final class FakeMarkerHost implements MarkerHost {
         markers.put(options.id, s);
     }
 
+    /** 批量新增调用次数与每次的点数（验证一次 addMarkers） */
+    final List<Integer> batchSizes = new ArrayList<>();
+    /** 为 true 时下一次批量新增整批抛异常 */
+    boolean failNextBatch = false;
+
+    @Override
+    public void addNativeMarkers(List<FullMarkerOptions> os, List<NativeIcon> icons, List<Boolean> selected) {
+        if (failNextBatch) {
+            failNextBatch = false;
+            throw new IllegalStateException("addMarkers 失败");
+        }
+        batchSizes.add(os.size());
+        for (int i = 0; i < os.size(); i++) {
+            addNativeMarker(os.get(i), icons.get(i), selected.get(i));
+        }
+    }
+
     @Override
     public void updateNativeMarker(FullMarkerOptions options, NativeIcon icon, boolean selected) {
         failIfAsked();

@@ -37,4 +37,15 @@ public interface MarkerHost {
      * icon 为空：只更新位置等属性，不改图标与锚点（R-GEN-5）。zIndex 规则同上
      */
     void updateNativeMarker(FullMarkerOptions options, NativeIcon icon, boolean selected);
+
+    /**
+     * 批量新增 native Marker（三个列表一一对应），生产实现一次 addMarkers。
+     * 抛异常时调用方按整批失败处理（生产实现保证不留下其中任何点）；默认逐个调用 addNativeMarker（单测假实现用）
+     */
+    default void addNativeMarkers(java.util.List<FullMarkerOptions> options,
+                                  java.util.List<NativeIcon> icons, java.util.List<Boolean> selected) {
+        for (int i = 0; i < options.size(); i++) {
+            addNativeMarker(options.get(i), icons.get(i), selected.get(i));
+        }
+    }
 }

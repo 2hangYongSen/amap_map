@@ -31,6 +31,7 @@ import com.amap.flutter.map.utils.Const;
 import com.amap.flutter.map.utils.ConvertUtil;
 import com.amap.flutter.map.utils.LogUtil;
 
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -436,6 +437,45 @@ public class MarkersController
             // native 点位锚点来自合成画布（§9.2），覆盖 options.anchor
             controller.setAnchor(icon.anchorU, icon.anchorV);
             controller.setZIndex(o.zIndexFor(selected));
+        }
+
+        /** 全部属性写进 MarkerOptions，一次 addMarkers；只有 clickable 不在 options 里，需要时单独设 */
+        @Override
+        public void addNativeMarkers(List<FullMarkerOptions> os, List<NativeIcon> icons, List<Boolean> selected) {
+            if (os.isEmpty()) {
+                return;
+            }
+            if (null == amap) { // 不能静默返回：调用方会以为已显示
+                throw new IllegalStateException("地图已销毁");
+            }
+            ArrayList<MarkerOptions> list = new ArrayList<>(os.size());
+            for (int i = 0; i < os.size(); i++) {
+                FullMarkerOptions o = os.get(i);
+                NativeIcon icon = icons.get(i);
+                list.add(new MarkerOptions()
+                        .position(new LatLng(o.latitude, o.longitude))
+                        .icon((BitmapDescriptor) icon.descriptor)
+                        .anchor(icon.anchorU, icon.anchorV) // 锚点来自合成画布（§9.2）
+                        .alpha(o.alpha).draggable(o.draggable).infoWindowEnable(o.infoWindowEnable)
+                        .title(o.title).snippet(o.snippet).rotateAngle(o.rotation).visible(o.visible)
+                        .zIndex(o.zIndexFor(selected.get(i))));
+            }
+            ArrayList<Marker> ms = amap.addMarkers(list, false);
+            if (ms == null || ms.size() != os.size()) {
+                if (ms != null) { // 数量对不上：撤掉已加的，按整批失败处理
+                    for (Marker m : ms) m.remove();
+                }
+                throw new IllegalStateException("addMarkers 返回 " + (ms == null ? "null" : ms.size()) + " 个，期望 " + os.size());
+            }
+            for (int i = 0; i < ms.size(); i++) {
+                Marker m = ms.get(i);
+                String id = os.get(i).id;
+                if (!os.get(i).clickable) {
+                    m.setClickable(false); // MarkerOptions 没有 clickable，默认可点
+                }
+                controllerMapByDartId.put(id, new MarkerController(m));
+                idMapByOverlyId.put(m.getId(), id);
+            }
         }
 
         @Override
