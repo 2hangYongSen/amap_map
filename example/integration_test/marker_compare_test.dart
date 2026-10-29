@@ -263,9 +263,21 @@ Future<void> _memScenario(CompareController c, S18Out out, int n) async {
   final int rss1 = ProcessInfo.currentRss;
   out.command('meminfo', '${tag}_end');
   await _wait(2000);
+  // 再做 4 次“推送 2 批 → 清空”，记每次清空后的 RSS：稳定说明是缓存，一直上涨才是泄漏
+  final List<double> cycles = <double>[rss1 / 1048576];
+  for (int k = 0; k < 4; k++) {
+    await c.push();
+    await c.push();
+    await c.reset();
+    await _wait(5000);
+    cycles.add(ProcessInfo.currentRss / 1048576);
+  }
+  out.command('meminfo', '${tag}_cycle');
+  await _wait(2000);
   out.record(<String, Object?>{
     'summary': true, 'sc': 'mem', 'n': n, 'scheme': s.name, 'rounds': _memRounds,
     'rssBaseMB': rss0 / 1048576, 'rssPeakMB': peak / 1048576, 'rssEndMB': rss1 / 1048576,
+    'rssCyclesMB': cycles,
   });
 }
 
@@ -318,6 +330,8 @@ Map<String, Object?> _row(PushResult r) => <String, Object?>{
       'jankRaster': r.jankRaster,
       'dropped': r.dropped,
       'worstMs': r.worstFrameMs,
+      'windowMs': r.windowMs,
+      'thermal': r.thermal,
     };
 
 /// P50 / P95；卡顿帧取每轮的分位数

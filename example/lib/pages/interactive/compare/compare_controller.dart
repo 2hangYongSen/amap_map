@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:amap_map/amap_map.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/painting.dart' show Offset;
+import 'package:flutter/services.dart' show MethodChannel;
 import 'package:flutter/widgets.dart' show WidgetsBinding;
 import 'package:x_amap_base/x_amap_base.dart';
 
@@ -38,12 +39,29 @@ class PushResult {
   /// 推送后 [CompareController.jankWindow] 内的 Flutter 帧统计；统计完成前为空
   int? frames, jankBuild, jankRaster, dropped;
   double? worstFrameMs;
+
+  /// 帧统计窗口实际时长（毫秒）
+  double? windowMs;
+
+  /// 本轮结束时的发热状态（iOS thermalState 0～3，Android thermalStatus 0～6）；读不到为空
+  int? thermal;
   FlutterLoad load = FlutterLoad.off;
 
   /// 是否在镜头平移过程中推送
   bool panning = false;
 
   bool get done => t2t4 != null;
+}
+
+/// 示例 App 宿主提供的发热状态（AppDelegate.m / MainActivity.java）；读不到返回 null
+const MethodChannel _thermalChannel = MethodChannel('amap_example/thermal');
+
+Future<int?> readThermal() async {
+  try {
+    return await _thermalChannel.invokeMethod<int>('get');
+  } catch (_) {
+    return null;
+  }
 }
 
 /// 对照页的状态与测量逻辑，页面和集成测试共用
@@ -57,8 +75,8 @@ class CompareController extends ChangeNotifier {
   int count = 200;
   FlutterLoad load = FlutterLoad.off;
 
-  /// 推送后统计 Flutter 掉帧的时长
-  static const Duration jankWindow = Duration(seconds: 3);
+  /// 掉帧统计窗口：从推送开始，到原生回执到达后再加这么久（两种方案同一口径）
+  static const Duration jankTail = Duration(seconds: 1);
 
   /// 帧预算按屏幕刷新率（120Hz 设备为 8.3ms）
   final JankMeter _jank = JankMeter(
@@ -106,17 +124,27 @@ class CompareController extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// 清空点位、PNG 缓存和原生合成位图缓存
+  /// 清空点位、PNG 缓存和原生合成位图缓存。
+  /// 先等删除点位的那次更新回执到达，再清缓存：否则清缓存先到原生，旧点还在显示，缓存删不掉
   Future<void> reset() async {
+    final bool hadMarkers = markers.isNotEmpty;
+    final double since = MarkerDiagnosticsClock.nowMs();
     markers = <Marker>{};
     pngCache.clear();
     _batch = null;
     _selectedId = null;
     notifyListeners();
+    // 回执里的 t1 晚于 since，说明删除已在原生执行完；最多等 3s
+    for (int i = 0; hadMarkers && i < 60 && _lastReceiptT1 < since; i++) {
+      await Future<void>.delayed(const Duration(milliseconds: 50));
+    }
     try {
       await map?.clearNativeMarkerCaches();
     } catch (_) {} // 握手未完成时报错，此时原生缓存本来就是空的
   }
+
+  /// 最近一次更新回执的 Dart 发送时刻 t1
+  double _lastReceiptT1 = -1;
 
   /// 叠加在测量点位之外的点（iOS 集成测试的命令点位），不参与测量、不受 reset 影响
   Set<Marker> extra = <Marker>{};
@@ -140,7 +168,7 @@ class CompareController extends ChangeNotifier {
     await _calibrate();
     final PriceBatch b = PriceBatch.fresh(++_round, count);
     final int gen0 = pngCache.generated;
-    _jank.start(jankWindow);
+    _jank.start();
     final double t0 = MarkerDiagnosticsClock.nowMs();
     final Set<Marker> next = await buildMarkers(b);
     final PushResult r = PushResult(
@@ -160,15 +188,19 @@ class CompareController extends ChangeNotifier {
         pngCache.get(t, dpr, selected: true);
       }
     }
-    // 窗口从 PNG 生成之前开始，所以 PNG 生成造成的卡顿也计入
-    await Future<void>.delayed(jankWindow + const Duration(milliseconds: 1500));
-    // 原生应用可能比统计窗口还长：再等回执，最多 15s
-    for (int i = 0; i < 150 && !r.done && !_disposed; i++) {
-      await Future<void>.delayed(const Duration(milliseconds: 100));
+    // 窗口从 PNG 生成之前开始，到回执后 jankTail 结束：两种方案的生成与上图都计入
+    for (int i = 0; i < 300 && !r.done && !_disposed; i++) {
+      await Future<void>.delayed(const Duration(milliseconds: 50));
     }
+    await Future<void>.delayed(jankTail);
     if (_disposed) return r;
+    await _jank.finish();
+    // 引擎约每秒批量上报帧耗时，再等一批
+    await Future<void>.delayed(const Duration(milliseconds: 1500));
     _jank.stop();
     r
+      ..windowMs = _jank.windowMs
+      ..thermal = await readThermal()
       ..frames = _jank.frames
       ..jankBuild = _jank.jankBuild
       ..jankRaster = _jank.jankRaster
@@ -298,6 +330,7 @@ class CompareController extends ChangeNotifier {
   void onUpdateApplied(MarkerUpdateReport rep) {
     final PushResult? r = last;
     final double? t1 = rep.dartT1Ms;
+    if (t1 != null && t1 > _lastReceiptT1) _lastReceiptT1 = t1;
     // 只归集推送统计期间的回执；之后 PNG 方案点击重发图标的回执不算进推送
     if (!_busy || r == null || t1 == null || t1 < r.t0) return;
     r

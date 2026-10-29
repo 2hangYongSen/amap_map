@@ -72,18 +72,31 @@ def push(rows):
               f"{pp(col(xs, 't0t1'), 0)} | {pp(col(xs, 't2t4'), 0)} | **{pp(col(xs, 't0t4'), 0)}** | "
               f"{size(pct(col(xs, 'bytes'), .5) / 1024) if pct(col(xs, 'bytes'), .5) else '0'} | "
               f"{f(pct(col(xs, 'draws'), .5), 0)} |")
-    print('\n### 推送期间 Flutter 帧（3 秒窗口）\n')
-    print('| 点数 | 负载 | 方案 | 窗口帧数 P50 | 卡顿帧合计（构建 / 绘制） | 卡顿帧 P50 / P95 | 丢帧 P50 / P95（合计） | 单帧最长 P50 / P95 |')
-    print('|---|---|---|---|---|---|---|---|')
+    print('\n### 推送期间 Flutter 帧（窗口：推送开始 → 回执后 1 秒）\n')
+    print('| 点数 | 负载 | 方案 | 窗口时长 P50 | 窗口帧数 P50 | 卡顿帧合计（构建 / 绘制） | 卡顿帧 P50 / P95 | 丢帧 P50 / P95（合计） | 丢帧率 | 单帧最长 P50 / P95 |')
+    print('|---|---|---|---|---|---|---|---|---|---|')
     for k in keys:
         xs = g(k)
         jb, jr = sum(col(xs, 'jankBuild')), sum(col(xs, 'jankRaster'))
         jank = [x.get('jankBuild', 0) + x.get('jankRaster', 0) for x in xs]
-        dr = col(xs, 'dropped')
+        dr, fr = col(xs, 'dropped'), col(xs, 'frames')
         drop = f'{pp(dr, 0)}（{sum(dr)}）' if dr else '—'
-        print(f"| {k[0]} | {LOAD.get(k[1], k[1])} | {SCHEME[k[2]]} | {f(pct(col(xs, 'frames'), .5), 0)} | "
-              f"{jb + jr}（{jb} / {jr}） | {pp(jank, 1)} | {drop} | {pp(col(xs, 'worstMs'))}ms |")
+        # 丢帧率 = 丢帧 ÷ 应有帧数（实际帧 + 丢帧），窗口长短不同时也能比
+        rate = f'{100 * sum(dr) / (sum(dr) + sum(fr)):.0f}%' if dr and fr else '—'
+        win = col(xs, 'windowMs')
+        print(f"| {k[0]} | {LOAD.get(k[1], k[1])} | {SCHEME[k[2]]} | {f(pct(win, .5) / 1000, 1) + 's' if win else '—'} | "
+              f"{f(pct(fr, .5), 0)} | {jb + jr}（{jb} / {jr}） | {pp(jank, 1)} | {drop} | {rate} | {pp(col(xs, 'worstMs'))}ms |")
     print()
+    # 发热状态（iOS 0～3：2=serious；Android 0～6：2=moderate）：每组列出各取值的轮数
+    th = [r for r in rs if r.get('thermal') is not None]
+    if th:
+        print('发热状态（取值：轮数）：' + '；'.join(
+            f"{k[0]} 点 {LOAD.get(k[1], k[1])} {SCHEME[k[2]]} "
+            + '、'.join(f'{v}:{c}' for v, c in sorted(__import__('collections').Counter(
+                x['thermal'] for x in th if (x['n'], x['sc'], x['scheme']) == k).items()))
+            for k in keys) + '\n')
+    else:
+        print('发热状态：未记录\n')
     return keys
 
 
@@ -132,7 +145,17 @@ def mem(rows, mems):
         for tag, name, rss in (('base', '基线', 'rssBaseMB'), ('peak', '峰值', 'rssPeakMB'), ('end', '清空后', 'rssEndMB')):
             nat, java, pss = info.get(f"{r['scheme']}_{r['n']}_{tag}", (None,) * 3)
             print(f"| {SCHEME[r['scheme']]} | {r['n']} | {name} | {pss or '—'} | {nat or '—'} | {java or '—'} | {r[rss]:.0f} |")
+        nat, java, pss = info.get(f"{r['scheme']}_{r['n']}_cycle", (None,) * 3)
+        if pss:
+            print(f"| {SCHEME[r['scheme']]} | {r['n']} | 再循环 4 次后 | {pss} | {nat} | {java} | {r['rssCyclesMB'][-1]:.0f} |")
     print()
+    cy = [r for r in rs if r.get('rssCyclesMB')]
+    if cy:
+        print('每次清空后 RSS（MB，第 1 次为上表“清空后”，之后每次先推送 2 批再清空）：\n')
+        for r in sorted(cy, key=lambda r: (r['n'], r['scheme'] != 'native')):
+            v = r['rssCyclesMB']
+            print(f"- {SCHEME[r['scheme']]} {r['n']} 点：{' → '.join(f'{x:.0f}' for x in v)}（首末差 {v[-1] - v[0]:+.0f}）")
+        print()
     return True
 
 

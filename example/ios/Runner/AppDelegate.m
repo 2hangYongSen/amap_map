@@ -10,6 +10,13 @@
     [GeneratedPluginRegistrant registerWithRegistry:self];
 //    设置AMap的key
     [AMapServices sharedServices].apiKey = @"4dfdec97b7bf0b8c13e94777103015a9";
+  // 对照测试用：发热状态 0～3（NSProcessInfoThermalState）
+  NSObject<FlutterPluginRegistrar> *reg = [self registrarForPlugin:@"AmapExampleThermal"];
+  FlutterMethodChannel *thermal = [FlutterMethodChannel methodChannelWithName:@"amap_example/thermal"
+                                                              binaryMessenger:reg.messenger];
+  [thermal setMethodCallHandler:^(FlutterMethodCall *call, FlutterResult result) {
+    result(@(NSProcessInfo.processInfo.thermalState));
+  }];
   BOOL ok = [super application:application didFinishLaunchingWithOptions:launchOptions];
   // S14 实验：仅当启动参数带 -S14Exp 时接管窗口（UI 测试使用），正常启动不受影响
   [S14ExpHost installIfRequested:self];
