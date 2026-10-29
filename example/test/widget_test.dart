@@ -10,7 +10,7 @@ import 'package:flutter_test/flutter_test.dart';
 void main() {
   test('every demo has a unique route and test steps', () {
     final List<Demo> demos = allDemos();
-    expect(demos.length, 29);
+    expect(demos.length, 30); // 新增 AM-P02 后共 30 个示例
     expect(demos.map((Demo demo) => demo.slug).toSet().length, demos.length);
     expect(demos.map((Demo demo) => demo.title.split(':').first).toSet().length,
         demos.length);
