@@ -5,9 +5,14 @@
 .pub/
 
 build/
+docs/
+
 .idea/
 *.iml
 **/pubspec.lock
+!example/pubspec.lock
 .settings/
 .project
 **.cxx
+example/tool/env.sh
+.cursor/rules/native-marker-workflow.mdc

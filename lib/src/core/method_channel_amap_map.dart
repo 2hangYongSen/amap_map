@@ -21,6 +21,7 @@ import 'package:flutter/gestures.dart';
 import 'package:flutter/services.dart';
 import 'package:stream_transform/stream_transform.dart';
 
+import '../native_marker/protocol_message.dart';
 import 'map_event.dart';
 
 // ignore: constant_identifier_names
@@ -68,6 +69,44 @@ class MethodChannelAMapFlutterMap implements AMapFlutterPlatform {
       'markers#update',
       markerUpdates.toMap(),
     );
+  }
+
+  /// 新协议握手 `markers#attach`（R-INIT-3）
+  Future<Map<Object?, Object?>?> attachMarkers({required int mapId}) {
+    return channel(mapId).invokeMapMethod<Object?, Object?>(
+        'markers#attach', <String, dynamic>{'protocolVersion': 2});
+  }
+
+  /// 新协议 `markers#update`，载荷由发送队列生成（§6.2）
+  Future<Map<Object?, Object?>?> updateMarkersV2(
+      Map<String, dynamic> payload,
+      {required int mapId}) {
+    return channel(mapId)
+        .invokeMapMethod<Object?, Object?>('markers#update', payload);
+  }
+
+  /// 设置原生选中点 `markers#setSelected`，返回 `{revision}`
+  Future<Map<Object?, Object?>?> setSelectedMarker(String? markerId,
+      {required int mapId}) {
+    return channel(mapId).invokeMapMethod<Object?, Object?>(
+        'markers#setSelected', <String, dynamic>{'markerId': markerId});
+  }
+
+  /// 全量恢复 `markers#resync`（R-SYNC-7）
+  Future<Map<Object?, Object?>?> resyncMarkers(Map<String, dynamic> payload,
+      {required int mapId}) {
+    return channel(mapId)
+        .invokeMapMethod<Object?, Object?>('markers#resync', payload);
+  }
+
+  /// 诊断 `diag#ping`，返回 `{nativeMs}`；诊断未开启时原生报错（R-TIME-3）
+  Future<Map<Object?, Object?>?> diagPing({required int mapId}) {
+    return channel(mapId).invokeMapMethod<Object?, Object?>('diag#ping');
+  }
+
+  /// 诊断 `diag#clearCaches`：冷测试前清空原生合成缓存（§13.4）
+  Future<void> diagClearCaches({required int mapId}) {
+    return channel(mapId).invokeMethod<void>('diag#clearCaches');
   }
 
   /// 更新polyline的数据
@@ -178,6 +217,11 @@ class MethodChannelAMapFlutterMap implements AMapFlutterPlatform {
     return _events(mapId).whereType<PolylineTapEvent>();
   }
 
+  /// 新协议点位事件（§6.1）
+  Stream<MarkerProtocolEvent> onMarkerProtocolEvent({required int mapId}) {
+    return _events(mapId).whereType<MarkerProtocolEvent>();
+  }
+
   Future<dynamic> _handleMethodCall(MethodCall call, int mapId) async {
     switch (call.method) {
       case 'location#changed':
@@ -215,6 +259,11 @@ class MethodChannelAMapFlutterMap implements AMapFlutterPlatform {
         break;
 
       case 'marker#onTap':
+        // 诊断模式带 tapId：先交给队列记下，再分发业务点击（R-TIME-7）
+        if (call.arguments is Map && call.arguments['tapId'] != null) {
+          _mapEventStreamController.add(MarkerProtocolEvent(mapId,
+              MarkerProtocolMessage.fromArguments(call.method, call.arguments)));
+        }
         _mapEventStreamController.add(MarkerTapEvent(
           mapId,
           call.arguments['markerId'],
@@ -225,6 +274,16 @@ class MethodChannelAMapFlutterMap implements AMapFlutterPlatform {
             mapId,
             LatLng.fromJson(call.arguments['position'])!,
             call.arguments['markerId']));
+        break;
+      // 新协议事件原样转交队列，解析与去重在队列中完成
+      case 'marker#nativeError':
+      case 'marker#imagesResult':
+      case 'marker#selectionChanged':
+      case 'markers#removed':
+      case 'markers#applied':
+      case 'markers#tapApplied':
+        _mapEventStreamController.add(MarkerProtocolEvent(mapId,
+            MarkerProtocolMessage.fromArguments(call.method, call.arguments)));
         break;
       case 'polyline#onTap':
         _mapEventStreamController

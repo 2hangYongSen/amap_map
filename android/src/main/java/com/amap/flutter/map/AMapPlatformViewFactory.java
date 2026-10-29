@@ -5,6 +5,7 @@ import android.content.Context;
 import androidx.lifecycle.LifecycleOwner;
 
 import com.amap.api.maps.model.CameraPosition;
+import com.amap.flutter.map.overlays.marker.nativemarker.NativeMarkerManager;
 import com.amap.flutter.map.utils.ConvertUtil;
 import com.amap.flutter.map.utils.LogUtil;
 
@@ -55,7 +56,9 @@ class AMapPlatformViewFactory extends PlatformViewFactory {
                 builder.setCamera(cameraPosition);
             }
 
-            if (params.containsKey("markersToAdd")) {
+            if (NativeMarkerManager.isV2Payload(params)) {
+                builder.setNativeMarkerCreation(params);
+            } else if (params.containsKey("markersToAdd")) {
                 builder.setInitialMarkers(params.get("markersToAdd"));
             }
             if (params.containsKey("polylinesToAdd")) {

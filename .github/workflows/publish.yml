@@ -1,11 +1,8 @@
 name: Publish to Pub.dev
 
+# fork 治理：仅允许手动触发，禁止 push / PR 自动发布
 on:
-  push:
-  pull_request:
-    branches:
-      - main
-
+  workflow_dispatch:
 
 jobs:
   publishing:

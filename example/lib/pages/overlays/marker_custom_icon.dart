@@ -1,6 +1,7 @@
 import 'package:amap_map/amap_map.dart';
 import 'package:x_amap_base/x_amap_base.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 class MarkerCustomIconPage extends StatefulWidget {
   const MarkerCustomIconPage({super.key});
@@ -17,7 +18,9 @@ class _BodyState extends State<MarkerCustomIconPage> {
   static const String _startIconPath = 'assets/start.png';
   static const String _endIconPath = 'assets/end.png';
   String _iconPath = _startIconPath;
-  void _initMarker(BuildContext context) async {
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
     if (_hasInitMarker) {
       return;
     }
@@ -28,6 +31,23 @@ class _BodyState extends State<MarkerCustomIconPage> {
       _hasInitMarker = true;
       _currentMarkerId = marker.id;
       _initMarkerMap[marker.id] = marker;
+    });
+  }
+
+  // T-FIX-3：用 fromBytes 在两张图之间切换，验证 iOS 按字节内容更新图标
+  bool _bytesUseStart = false;
+  final Map<String, Uint8List> _iconBytes = <String, Uint8List>{};
+
+  Future<void> _toggleBytesIcon() async {
+    _bytesUseStart = !_bytesUseStart;
+    final String path = _bytesUseStart ? _startIconPath : _endIconPath;
+    final Uint8List bytes = _iconBytes[path] ??=
+        (await rootBundle.load(path)).buffer.asUint8List();
+    if (!mounted) return;
+    final Marker marker = _initMarkerMap[_currentMarkerId]!;
+    setState(() {
+      _initMarkerMap[_currentMarkerId!] =
+          marker.copyWith(iconParam: BitmapDescriptor.fromBytes(bytes));
     });
   }
 
@@ -66,7 +86,6 @@ class _BodyState extends State<MarkerCustomIconPage> {
 
   @override
   Widget build(BuildContext context) {
-    _initMarker(context);
     final AMapWidget amap = AMapWidget(
       markers: Set<Marker>.of(_initMarkerMap.values),
     );
@@ -84,6 +103,10 @@ class _BodyState extends State<MarkerCustomIconPage> {
             Expanded(
               flex: 1,
               child: _createMyFloatButton('更改图标', _updateMarkerIcon),
+            ),
+            Expanded(
+              flex: 1,
+              child: _createMyFloatButton('切换 bytes 图标', _toggleBytesIcon),
             ),
           ],
         ));

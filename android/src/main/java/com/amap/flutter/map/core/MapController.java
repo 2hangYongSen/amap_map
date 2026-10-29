@@ -100,6 +100,7 @@ public class MapController
                 final Object durationObject = call.argument("duration");
 
                 moveCamera(cameraUpdate, animatedObject, durationObject);
+                result.success(null);
                 break;
             case Const.METHOD_MAP_SET_RENDER_FPS:
                 amap.setRenderFps((Integer) call.argument("fps"));

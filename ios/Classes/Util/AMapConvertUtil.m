@@ -163,8 +163,14 @@
             if (fabs([previousIcon[index] doubleValue] - [currentIcon[index] doubleValue]) > 0.000001) {
                 return YES;
             }
+        } else if ([previousIcon[index] isKindOfClass:[FlutterStandardTypedData class]]) {
+            //F-1: fromBytes 的字节数据按内容比较
+            if ([currentIcon[index] isKindOfClass:[FlutterStandardTypedData class]] == NO ||
+                [[previousIcon[index] data] isEqualToData:[currentIcon[index] data]] == NO) {
+                return YES;
+            }
         } else {//其它数据无法比较，直接默认强制更新
-            return NO;
+            return YES;
         }
     }
     return NO;

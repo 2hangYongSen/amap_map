@@ -1,6 +1,3 @@
-import 'dart:async';
-
-import 'package:amap_map_example/widgets/amap_switch_button.dart';
 import 'package:flutter/material.dart';
 
 import 'package:amap_map/amap_map.dart';
@@ -16,15 +13,17 @@ class CustomInfoWindowDemoPage extends StatefulWidget {
 }
 
 class _State extends State<CustomInfoWindowDemoPage> {
-  static final LatLng mapCenter = const LatLng(39.909187, 116.397451);
+  static const LatLng mapCenter = LatLng(39.909187, 116.397451);
 
   final Map<String, Marker> _markers = <String, Marker>{};
   BitmapDescriptor? _markerIcon;
   String? selectedMarkerId;
-  bool showInfoWindow = false;
   AMapController? _controller;
 
-  Future<void> _onMapCreated(AMapController controller) async {
+  Marker? get _selectedMarker => _markers[selectedMarkerId];
+
+  void _onMapCreated(AMapController controller) {
+    if (!mounted) return;
     setState(() {
       _controller = controller;
     });
@@ -38,6 +37,8 @@ class _State extends State<CustomInfoWindowDemoPage> {
     final Marker marker = Marker(
       position: markPostion,
       icon: _markerIcon!,
+      // 使用 Flutter 自定义窗口，避免同时显示原生气泡。
+      infoWindowEnable: false,
       infoWindow: InfoWindow(title: '第 $markerCount 个Marker'),
       onTap: (String markerId) => _onMarkerTapped(markerId),
       onDragEnd: (String markerId, LatLng endPosition) =>
@@ -51,7 +52,8 @@ class _State extends State<CustomInfoWindowDemoPage> {
 
   void _onMarkerTapped(String markerId) {
     final Marker? tappedMarker = _markers[markerId];
-    final String? title = tappedMarker!.infoWindow.title;
+    if (!mounted || tappedMarker == null) return;
+    final String? title = tappedMarker.infoWindow.title;
     print('$title 被点击了,markerId: $markerId');
     setState(() {
       selectedMarkerId = markerId;
@@ -60,8 +62,12 @@ class _State extends State<CustomInfoWindowDemoPage> {
 
   void _onMarkerDragEnd(String markerId, LatLng position) {
     final Marker? tappedMarker = _markers[markerId];
-    final String? title = tappedMarker!.infoWindow.title;
+    if (!mounted || tappedMarker == null) return;
+    final String? title = tappedMarker.infoWindow.title;
     print('$title markerId: $markerId 被拖拽到了: $position');
+    setState(() {
+      _markers[markerId] = tappedMarker.copyWith(positionParam: position);
+    });
   }
 
   void _remove() {
@@ -70,6 +76,7 @@ class _State extends State<CustomInfoWindowDemoPage> {
     if (selectedMarker != null) {
       setState(() {
         _markers.remove(selectedMarkerId);
+        selectedMarkerId = null;
       });
     } else {
       print('无选中的Marker，无法删除');
@@ -80,17 +87,18 @@ class _State extends State<CustomInfoWindowDemoPage> {
     if (_markers.isNotEmpty) {
       setState(() {
         _markers.clear();
-        selectedMarkerId = null.toString();
+        selectedMarkerId = null;
       });
     }
   }
 
-  void _changeInfo() async {
-    final Marker marker = _markers[selectedMarkerId]!;
-    final String newTitle = '${marker.infoWindow.title!}*';
+  void _changeInfo() {
+    final Marker? marker = _selectedMarker;
+    if (marker == null) return;
+    final String newTitle = '${marker.infoWindow.title ?? ''}*';
     if (selectedMarkerId != null) {
       setState(() {
-        _markers[selectedMarkerId!] = marker.copyWith(
+        _markers[marker.id] = marker.copyWith(
           infoWindowParam: marker.infoWindow.copyWith(
             titleParam: newTitle,
           ),
@@ -100,7 +108,8 @@ class _State extends State<CustomInfoWindowDemoPage> {
   }
 
   void _changeAnchor() {
-    final Marker marker = _markers[selectedMarkerId]!;
+    final Marker? marker = _selectedMarker;
+    if (marker == null) return;
     final Offset currentAnchor = marker.anchor;
     double dx = 0;
     double dy = 0;
@@ -116,21 +125,22 @@ class _State extends State<CustomInfoWindowDemoPage> {
     }
     final Offset newAnchor = Offset(dx, dy);
     setState(() {
-      _markers[selectedMarkerId!] = marker.copyWith(
+      _markers[marker.id] = marker.copyWith(
         anchorParam: newAnchor,
       );
     });
   }
 
   void _changePosition() {
-    final Marker marker = _markers[selectedMarkerId]!;
+    final Marker? marker = _selectedMarker;
+    if (marker == null) return;
     final LatLng current = marker.position;
     final Offset offset = Offset(
       mapCenter.latitude - current.latitude,
       mapCenter.longitude - current.longitude,
     );
     setState(() {
-      _markers[selectedMarkerId!] = marker.copyWith(
+      _markers[marker.id] = marker.copyWith(
         positionParam: LatLng(
           mapCenter.latitude + offset.dy,
           mapCenter.longitude + offset.dx,
@@ -139,41 +149,44 @@ class _State extends State<CustomInfoWindowDemoPage> {
     });
   }
 
-  Future<void> _changeAlpha() async {
-    final Marker marker = _markers[selectedMarkerId]!;
+  void _changeAlpha() {
+    final Marker? marker = _selectedMarker;
+    if (marker == null) return;
     final double current = marker.alpha;
     setState(() {
-      _markers[selectedMarkerId!] = marker.copyWith(
+      _markers[marker.id] = marker.copyWith(
         alphaParam: current < 0.1 ? 1.0 : current * 0.75,
       );
     });
   }
 
-  Future<void> _changeRotation() async {
-    final Marker marker = _markers[selectedMarkerId]!;
+  void _changeRotation() {
+    final Marker? marker = _selectedMarker;
+    if (marker == null) return;
     final double current = marker.rotation;
     setState(() {
-      _markers[selectedMarkerId!] = marker.copyWith(
+      _markers[marker.id] = marker.copyWith(
         rotationParam: current == 330.0 ? 0.0 : current + 30.0,
       );
     });
   }
 
-  Future<void> _toggleVisible(value) async {
-    final Marker marker = _markers[selectedMarkerId]!;
+  void _toggleVisible(bool value) {
+    final Marker? marker = _selectedMarker;
+    if (marker == null) return;
 
     setState(() {
-      showInfoWindow = value;
-      _markers[selectedMarkerId!] = marker.copyWith(
+      _markers[marker.id] = marker.copyWith(
         visibleParam: value,
       );
     });
   }
 
-  Future<void> _toggleDraggable(value) async {
-    final Marker marker = _markers[selectedMarkerId]!;
+  void _toggleDraggable(bool value) {
+    final Marker? marker = _selectedMarker;
+    if (marker == null) return;
     setState(() {
-      _markers[selectedMarkerId!] = marker.copyWith(
+      _markers[marker.id] = marker.copyWith(
         draggableParam: value,
       );
     });
@@ -185,6 +198,7 @@ class _State extends State<CustomInfoWindowDemoPage> {
     //最简单的方式
     _markerIcon ??= BitmapDescriptor.fromIconPath('assets/location_marker.png');
 
+    final Marker? selectedMarker = _selectedMarker;
     AMapWidget map = AMapWidget(
       onMapCreated: _onMapCreated,
       markers: Set<Marker>.of(_markers.values),
@@ -213,28 +227,26 @@ class _State extends State<CustomInfoWindowDemoPage> {
                         children: <Widget>[
                           TextButton(
                             onPressed: _add,
-                            child: const Text('添加'),
+                            child: Text('添加（当前 ${_markers.length} 个）'),
                           ),
                           TextButton(
                             onPressed:
-                                (selectedMarkerId == null) ? null : _remove,
+                                (selectedMarker == null) ? null : _remove,
                             child: const Text('移除'),
                           ),
                           TextButton(
                             onPressed:
-                                (selectedMarkerId == null) ? null : _changeInfo,
-                            child: const Text('更新InfoWidow'),
+                                (selectedMarker == null) ? null : _changeInfo,
+                            child: const Text('更新InfoWindow'),
                           ),
                           TextButton(
-                            onPressed: (selectedMarkerId == null)
-                                ? null
-                                : _changeAnchor,
+                            onPressed:
+                                (selectedMarker == null) ? null : _changeAnchor,
                             child: const Text('修改锚点'),
                           ),
                           TextButton(
-                            onPressed: (selectedMarkerId == null)
-                                ? null
-                                : _changeAlpha,
+                            onPressed:
+                                (selectedMarker == null) ? null : _changeAlpha,
                             child: const Text('修改透明度'),
                           ),
                         ],
@@ -245,28 +257,38 @@ class _State extends State<CustomInfoWindowDemoPage> {
                             onPressed: _markers.isNotEmpty ? _removeAll : null,
                             child: const Text('全部移除'),
                           ),
-                          AMapSwitchButton(
-                            label: const Text('允许拖动'),
-                            onSwitchChanged: (selectedMarkerId == null)
-                                ? null
-                                : _toggleDraggable,
-                            defaultValue: false,
+                          Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: <Widget>[
+                              const Text('允许拖动'),
+                              Switch(
+                                value: selectedMarker?.draggable ?? false,
+                                onChanged: selectedMarker == null
+                                    ? null
+                                    : _toggleDraggable,
+                              ),
+                            ],
                           ),
-                          AMapSwitchButton(
-                            label: const Text('显示'),
-                            onSwitchChanged: (selectedMarkerId == null)
-                                ? null
-                                : _toggleVisible,
-                            defaultValue: true,
+                          Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: <Widget>[
+                              const Text('显示'),
+                              Switch(
+                                value: selectedMarker?.visible ?? true,
+                                onChanged: selectedMarker == null
+                                    ? null
+                                    : _toggleVisible,
+                              ),
+                            ],
                           ),
                           TextButton(
-                            onPressed: (selectedMarkerId == null)
+                            onPressed: (selectedMarker == null)
                                 ? null
                                 : _changePosition,
                             child: const Text('修改坐标'),
                           ),
                           TextButton(
-                            onPressed: (selectedMarkerId == null)
+                            onPressed: (selectedMarker == null)
                                 ? null
                                 : _changeRotation,
                             child: const Text('修改旋转角度'),
@@ -292,7 +314,7 @@ class CustomInfoWindowAdapter extends BaseInfoWindowAdapter {
 
   @override
   Widget? buildInfoWindowContent(BuildContext context, Marker marker) {
-    if (marker.id != selectedMarkerId) {
+    if (marker.id != selectedMarkerId || !marker.visible) {
       return null;
     }
     return Container(

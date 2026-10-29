@@ -15,6 +15,7 @@ import com.amap.flutter.map.core.UISettingsSink;
 import com.amap.flutter.map.utils.LogUtil;
 
 import java.util.List;
+import java.util.Map;
 
 import io.flutter.plugin.common.BinaryMessenger;
 
@@ -46,6 +47,9 @@ class AMapOptionsBuilder implements AMapOptionsSink, UISettingsSink {
     private float anchorY = 2.0F;
 
     private Object initialMarkers;
+
+    /** 新协议创建参数（含 protocolVersion），非 null 时初始点位交给新协议处理 */
+    private Map<?, ?> nativeMarkerCreation;
 
     private Object initialPolylines;
 
@@ -95,7 +99,10 @@ class AMapOptionsBuilder implements AMapOptionsSink, UISettingsSink {
             aMapPlatformView.getMapController().setLogoLeftMargin(logoLeftMargin);
 
 
-            if (null != initialMarkers) {
+            if (null != nativeMarkerCreation) {
+                // 新协议：完整对象 + 逐点拒绝，结果在 markers#attach 返回（R-SYNC-4）
+                aMapPlatformView.getMarkersController().applyCreationParams(nativeMarkerCreation);
+            } else if (null != initialMarkers) {
                 List<Object> markerList = (List<Object>) initialMarkers;
                 aMapPlatformView.getMarkersController().addByList(markerList);
             }
@@ -234,6 +241,11 @@ class AMapOptionsBuilder implements AMapOptionsSink, UISettingsSink {
     @Override
     public void setInitialMarkers(Object markersObject) {
         this.initialMarkers = markersObject;
+    }
+
+    /** 创建参数带 protocolVersion 时由工厂调用 */
+    void setNativeMarkerCreation(Map<?, ?> params) {
+        this.nativeMarkerCreation = params;
     }
 
     @Override

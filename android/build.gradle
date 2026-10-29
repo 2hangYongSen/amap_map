@@ -31,10 +31,17 @@ android {
     lintOptions {
         disable 'InvalidPackage'
     }
+    testOptions {
+        unitTests.all {
+            // 共享夹具在模块外，声明为输入，夹具变化时单测不会被判为 UP-TO-DATE
+            inputs.dir("$projectDir/../test/fixtures")
+        }
+    }
 }
 
 dependencies {
     implementation 'com.amap.api:3dmap-location-search:10.1.200_loc6.4.9_sea9.7.4'
     implementation 'androidx.annotation:annotation:1.9.1'
+    testImplementation 'junit:junit:4.13.2'
 }
 

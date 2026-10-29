@@ -11,6 +11,11 @@
 #import "MAMapView+Flutter.h"
 #import "MAAnnotationView+Flutter.h"
 #import "AMapMarkerController.h"
+#import "AMapMarker.h"
+#import "AMapNativeMarkerView.h"
+#import "AMapSelectionAnnotation.h"
+#import "AMapMarkerDiagnostics.h"
+#import "AMapDiagSquareView.h"
 #import "MAPointAnnotation+Flutter.h"
 #import "AMapPolylineController.h"
 #import "MAPolyline+Flutter.h"
@@ -100,6 +105,8 @@
         _markerController = [[AMapMarkerController alloc] init:_channel
                                                        mapView:_mapView
                                                      registrar:registrar];
+        // 诊断标记方块（R-TIME-6），只在诊断模式下首次使用时才加到地图上
+        _markerController.diag.square = [[AMapDiagSquareView alloc] initWithHost:_mapView];
         _polylinesController = [[AMapPolylineController alloc] init:_channel
                                                             mapView:_mapView
                                                           registrar:registrar];
@@ -107,7 +114,10 @@
                                                           mapView:_mapView
                                                         registrar:registrar];
         id markersToAdd = args[@"markersToAdd"];
-        if ([markersToAdd isKindOfClass:[NSArray class]]) {
+        if ([AMapMarkerController isV2Payload:args]) {
+            // 新协议创建参数：资源先于点位登记，拒绝结果由 markers#attach 返回（R-SYNC-4）
+            [_markerController applyCreationParams:args];
+        } else if ([markersToAdd isKindOfClass:[NSArray class]]) {
             [_markerController addMarkers:markersToAdd];
         }
         id polylinesToAdd = args[@"polylinesToAdd"];
@@ -132,6 +142,8 @@
     if (MAMapRectIsEmpty(_initLimitMapRect) == NO) {//避免没有开始渲染，frame监听还存在时，快速销毁
         [_mapView removeObserver:self forKeyPath:@"frame"];
     }
+    // 销毁后迟到的解码结果不再发事件、不再改视图（§6.6）
+    [_markerController dispose];
 }
 
 - (void)updatePrivacyStateWithDict:(NSDictionary *)dict {
@@ -194,6 +206,8 @@
     __weak __typeof__(self) weakSelf = self;
     [self.channel addMethodName:@"map#update" withHandler:^(FlutterMethodCall * _Nonnull call, FlutterResult  _Nonnull result) {
         [weakSelf.mapView updateMapViewOption:call.arguments[@"options"] withRegistrar:weakSelf.registrar];
+        // 点位选项（选择、过渡）交给点位控制器，其余照旧
+        [weakSelf.markerController applyMarkerOptions:call.arguments[@"options"]];
         result(nil);
     }];
     [self.channel addMethodName:@"map#waitForMap" withHandler:^(FlutterMethodCall * _Nonnull call, FlutterResult  _Nonnull result) {
@@ -328,6 +342,10 @@
 //MARK: Annotation相关回调
 
 - (MAAnnotationView *)mapView:(MAMapView *)mapView viewForAnnotation:(id<MAAnnotation>)annotation {
+    if ([annotation isKindOfClass:[AMapSelectionAnnotation class]]) {
+        // 选中置顶的高层 Annotation（§10.2），按选中态绑定
+        return [_markerController nativeViewForSelectionAnnotation:(AMapSelectionAnnotation *)annotation mapView:mapView];
+    }
     if ([annotation isKindOfClass:[MAPointAnnotation class]] == NO) {
         return nil;
     }
@@ -336,6 +354,10 @@
         return nil;
     }
     AMapMarker *marker = [_markerController markerForId:fAnno.markerId];
+    if (marker.isNative) {
+        // 原生点位用独立复用标识，与旧路径 View 不互相复用（§10.1）
+        return [_markerController nativeViewForMarker:marker mapView:mapView];
+    }
     //    TODO: 这里只实现基础AnnotationView，不再根据marker的数据差异，区分是annotationView还是pinAnnotationView了；
     MAAnnotationView *view = [mapView dequeueReusableAnnotationViewWithIdentifier:AMapFlutterAnnotationViewIdentifier];
     if (view == nil) {
@@ -352,14 +374,28 @@
  */
 - (void)mapView:(MAMapView *)mapView didAddAnnotationViews:(NSArray *)views {
     for (MAAnnotationView *view in views) {
-        if ([view.annotation isKindOfClass:[MAAnnotationView class]] == NO) {
-            return;
+        if ([view.annotation isKindOfClass:[AMapSelectionAnnotation class]]) {
+            if ([view isKindOfClass:[AMapNativeMarkerView class]]) {
+                [_markerController rebindSelectionView:(AMapNativeMarkerView *)view];
+            }
+            continue;
+        }
+        //F-2: 判断 annotation 类型（原来误写为 View 类型），不满足时跳过当前 View 而不是整体返回
+        if ([view.annotation isKindOfClass:[MAPointAnnotation class]] == NO) {
+            continue;
         }
         MAPointAnnotation *fAnno = view.annotation;
         if (fAnno.markerId == nil) {
-            return;
+            continue;
         }
         AMapMarker *marker = [_markerController markerForId:fAnno.markerId];
+        if ([view isKindOfClass:[AMapNativeMarkerView class]]) {
+            // 再绑定一次：zIndex 在这里设置同样有效（R-IOS-2）
+            if (marker.isNative) {
+                [_markerController bindNativeView:(AMapNativeMarkerView *)view marker:marker];
+            }
+            continue;
+        }
         [view updateViewWithMarker:marker];
     }
 }
@@ -384,6 +420,13 @@
  * @param view annotationView
  */
 - (void)mapView:(MAMapView *)mapView didAnnotationViewTapped:(MAAnnotationView *)view {
+    // SDK 10.1.200 的单击识别器等待双击放大识别失败后才回调这里。
+    // setSelectedMarker 跳过此等待；二进制证据与官方引用见 README「点位选择延迟」。
+    if ([view.annotation isKindOfClass:[AMapSelectionAnnotation class]]) {
+        // R-TOP-5：高层 View 的点击按源点 id 进入正常流程，内部 Annotation 不暴露给 Dart
+        [_markerController onMarkerTap:((AMapSelectionAnnotation *)view.annotation).sourceMarkerId];
+        return;
+    }
     MAPointAnnotation *fAnno = view.annotation;
     if (fAnno.markerId == nil) {
         return;
@@ -446,6 +489,8 @@
  */
 - (void)mapView:(MAMapView *)mapView didSingleTappedAtCoordinate:(CLLocationCoordinate2D)coordinate {
     NSArray *latLng = [AMapConvertUtil jsonArrayFromCoordinate:coordinate];
+    // 点击启用的点位 View 不会回调这里（E-I2），无需去重；map#onTap 照旧发送
+    [_markerController onMapTap];
     [_channel invokeMethod:@"map#onTap" arguments:@{@"latLng":latLng}];
     NSArray *polylineRenderArray = [mapView getHittedPolylinesWith:coordinate traverseAll:NO];
     if (polylineRenderArray && polylineRenderArray.count > 0) {

@@ -15,8 +15,10 @@ import com.amap.api.maps.TextureMapView;
 import com.amap.flutter.map.core.MapController;
 import com.amap.flutter.map.core.MapsInitializerController;
 import com.amap.flutter.map.overlays.marker.MarkersController;
+import com.amap.flutter.map.overlays.marker.nativemarker.platform.AndroidDiagSquare;
 import com.amap.flutter.map.overlays.polygon.PolygonsController;
 import com.amap.flutter.map.overlays.polyline.PolylinesController;
+import com.amap.flutter.map.utils.Const;
 import com.amap.flutter.map.utils.LogUtil;
 
 import java.util.HashMap;
@@ -69,7 +71,8 @@ public class AMapPlatformView
             AMap amap = mapView.getMap();
             mapsInitializerController = new MapsInitializerController(methodChannel);
             mapController = new MapController(methodChannel, mapView);
-            markersController = new MarkersController(methodChannel, amap);
+            markersController = new MarkersController(methodChannel, amap, context);
+            markersController.setDiagnosticsSquare(new AndroidDiagSquare(mapView));
             polylinesController = new PolylinesController(methodChannel, amap);
             polygonsController = new PolygonsController(methodChannel, amap);
             initMyMethodCallHandlerMap();
@@ -138,6 +141,11 @@ public class AMapPlatformView
     public void onMethodCall(@NonNull MethodCall call, @NonNull MethodChannel.Result result) {
         LogUtil.i(CLASS_NAME, "onMethodCall==>" + call.method + ", arguments==> " + call.arguments);
         String methodId = call.method;
+        // map#update.options 中的点位选项（选择、过渡）交给点位控制器，其余照旧
+        if (Const.METHOD_MAP_UPDATE.equals(methodId) && markersController != null
+                && call.argument("options") instanceof Map) {
+            markersController.applyMapOptions((Map<?, ?>) call.argument("options"));
+        }
         if (myMethodCallHandlerMap.containsKey(methodId)) {
             Objects.requireNonNull(myMethodCallHandlerMap.get(methodId)).doMethodCall(call, result);
         } else {
@@ -262,6 +270,10 @@ public class AMapPlatformView
     }
 
     private void destroyMapViewIfNecessary() {
+        // 先清理点位再销毁地图（§8.6、R-DISP-2）；dispose 与生命周期 onDestroy 都经过这里
+        if (null != markersController) {
+            markersController.dispose();
+        }
         if (mapView == null) {
             return;
         }

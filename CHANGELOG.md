@@ -1,3 +1,17 @@
+## 1.1.0-native.1
+2026-10-27（fork 首个版本，基于上游 1.0.15 `5c91d70`）
+* 原生点位：`Marker.nativePresentation` 由原生端绘制文字、图标、形状背景（圆形、圆角矩形加箭头、阴影、描边）与图片背景（固定尺寸、九宫格），Dart 不再为每个点生成 PNG
+* 图片资源：`AMapWidget.markerImages`（asset / bytes），资源失败时按默认背景降级，asset 按 1s、4s、16s 自动重试并恢复
+* 原生选择：`selectable`、`selectedStyle`、`selectedZIndex`、`markerSelection`、`onMarkerSelectionChanged`、`AMapController.setSelectedMarker`；iOS 选中点用高层 Annotation 置顶
+* 集合替换：`markerTransition: MarkerTransition.replaceWhenReady(timeout)`，旧点在新点就绪前保持可见、可点击（iOS 同步完成，不等待）
+* 诊断计时：`onMarkerUpdateApplied`、`onMarkerTapApplied`（含 c1→c2 期间的 `drawCount`）、`calibrateNativeClock`、`clearNativeMarkerCaches`、标记方块
+* 新协议只在使用新能力时启用；未使用时载荷与 1.0.15 相同，旧 `Marker.icon` 行为不变
+* 修复（iOS）：`fromBytes` 图标之间切换不更新（F-1）；`didAddAnnotationViews` 类型判断（F-2）
+* 修复（Android）：资源失败后重新登记时改用最新来源（与 iOS 一致）
+* 已知问题（Android）：100 点冷更新 P95 比旧路径慢约 230ms，更新期间卡顿帧比例高于旧路径（见报告 §6）
+* iOS podspec 版本与 Dart 包同步，`AMap3DMap` 精确锁定 10.1.200；`publish_to: none`
+* 双端真机验收报告：`docs/superpowers/experiments/2026-10-27-s18/report.md`
+
 ## 1.0.15
 2025-03-21
 * add MapConfiguration and serialize utils

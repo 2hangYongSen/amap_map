@@ -42,7 +42,23 @@ public class Const {
      * markers
      */
     public static final String METHOD_MARKER_UPDATE = "markers#update";
-    public static final String[] METHOD_ID_LIST_FOR_MARKER = {METHOD_MARKER_UPDATE};
+    /** 新协议握手（§6.8） */
+    public static final String METHOD_MARKER_ATTACH = "markers#attach";
+    /** 新协议全量恢复（R-RES-9） */
+    public static final String METHOD_MARKER_RESYNC = "markers#resync";
+    /** 原生单选（§11） */
+    public static final String METHOD_MARKER_SET_SELECTED = "markers#setSelected";
+    /** 诊断（§13），只在 markerDiagnostics 开启时可用 */
+    public static final String METHOD_DIAG_PING = "diag#ping";
+    public static final String METHOD_DIAG_CLEAR_CACHES = "diag#clearCaches";
+    public static final String[] METHOD_ID_LIST_FOR_MARKER = {
+            METHOD_MARKER_UPDATE,
+            METHOD_MARKER_ATTACH,
+            METHOD_MARKER_RESYNC,
+            METHOD_MARKER_SET_SELECTED,
+            METHOD_DIAG_PING,
+            METHOD_DIAG_CLEAR_CACHES
+    };
 
     /**
      * polygons

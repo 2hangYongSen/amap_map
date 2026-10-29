@@ -1,7 +1,5 @@
 package com.amap.flutter.map.overlays.marker;
 
-import android.text.TextUtils;
-
 import com.amap.flutter.map.utils.ConvertUtil;
 
 import java.util.List;
@@ -14,7 +12,14 @@ import java.util.Map;
  * @since
  */
 public class MarkerUtil {
+    /** 旧协议解析：字段为 null 即跳过（“缺失等于不修改”，R-PROTO-3） */
     public static String interpretMarkerOptions(Object o, MarkerOptionsSink sink) {
+        return interpretMarkerOptions(o, sink, MarkerIconDecoder.DEFAULT);
+    }
+
+    /** 同上，图标解码可替换（JVM 单测用） */
+    public static String interpretMarkerOptions(Object o, MarkerOptionsSink sink,
+                                                MarkerIconDecoder decoder) {
         if (null == o) {
             return null;
         }
@@ -39,7 +44,7 @@ public class MarkerUtil {
         }
         final Object icon = data.get("icon");
         if (icon != null) {
-            sink.setIcon(ConvertUtil.toBitmapDescriptor(icon));
+            sink.setIcon(decoder.decode(icon));
         }
 
         final Object infoWindow = data.get("infoWindow");
@@ -86,11 +91,11 @@ public class MarkerUtil {
             MarkerOptionsSink sink, Map<String, Object> infoWindow) {
         String title = (String) infoWindow.get("title");
         String snippet = (String) infoWindow.get("snippet");
-        // snippet is nullable.
-        if (!TextUtils.isEmpty(title)) {
+        // snippet is nullable. 与 TextUtils.isEmpty 等价，便于 JVM 单测
+        if (title != null && !title.isEmpty()) {
             sink.setTitle(title);
         }
-        if (!TextUtils.isEmpty(snippet)) {
+        if (snippet != null && !snippet.isEmpty()) {
             sink.setSnippet(snippet);
         }
     }

@@ -1,0 +1,76 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+env:
+  FLUTTER_VERSION: 3.41.4
+
+jobs:
+  # 第一组：按 example/pubspec.lock 锁定的版本跑
+  locked:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+      - name: 插件依赖
+        run: flutter pub get
+      - name: example 依赖（使用锁文件）
+        working-directory: example
+        run: flutter pub get --enforce-lockfile
+      - name: example 分析（记录基线，info 不阻断）
+        working-directory: example
+        run: flutter analyze --no-fatal-infos --no-fatal-warnings
+      - name: example 测试
+        working-directory: example
+        run: flutter test
+
+  # Android JVM 单测（S5 起）：经 example 工程运行插件模块的 testDebugUnitTest
+  android-unit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+      - name: example 依赖（使用锁文件）
+        working-directory: example
+        run: flutter pub get --enforce-lockfile
+      # gradlew 被 .gitignore 忽略，由 Flutter 生成 wrapper 与 local.properties（不打包）
+      - name: 生成 Gradle 配置
+        working-directory: example
+        run: flutter build apk --config-only
+      - name: JUnit
+        working-directory: example/android
+        run: ./gradlew :amap_map:testDebugUnitTest
+
+  # 第二组：按依赖允许的最低版本跑
+  downgraded:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+      - name: 插件依赖（最低版本）
+        run: flutter pub downgrade
+      - name: example 依赖（最低版本）
+        working-directory: example
+        run: flutter pub downgrade
+      - name: example 测试
+        working-directory: example
+        run: flutter test

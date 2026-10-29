@@ -1,16 +1,99 @@
-# amap_map_example
+# amap_map 示例应用
 
-Demonstrates how to use the amap_map plugin.
+按功能分组的测试应用，通过 `amap_map: path: ../` 直接使用仓库中的插件源码。首页每一项都有固定测试编号和功能说明，进入页面后点右上角「测试步骤」查看操作与预期结果。
 
-## Getting Started
+## 运行
 
-This project is a starting point for a Flutter application.
+1. 在 `lib/const_config.dart` 配置高德 Key。Android Key 必须与包名和构建签名匹配。
+2. 运行：
 
-A few resources to get you started if this is your first Flutter project:
+   ```bash
+   cd example
+   flutter pub get
+   flutter run --release -d <设备ID>
+   ```
 
-- [Lab: Write your first Flutter app](https://flutter.dev/docs/get-started/codelab)
-- [Cookbook: Useful Flutter samples](https://flutter.dev/docs/cookbook)
+3. 打安装包：`flutter build apk --release`，输出在 `build/app/outputs/flutter-apk/app-release.apk`。
 
-For help getting started with Flutter, view our
-[online documentation](https://flutter.dev/docs), which offers tutorials,
-samples, guidance on mobile development, and a full API reference.
+> Release 包目前使用 Demo 调试签名，只用于测试，正式发布需配置自己的签名。
+
+定位权限在进入定位页时才申请，首页不申请电话、存储和定位权限。
+
+Android 真机可以直接打开某个页面（`route` 为测试目录里的 slug）：
+
+```bash
+adb shell am start -n com.amap.flutter.amap_map_example/.MainActivity --es route /native-marker-image
+```
+
+## 测试目录
+
+| 分组 | 编号 | 内容 |
+| --- | --- | --- |
+| 基础功能 | AM-D01 / D01.1 / D02 | 基础地图、多实例、事件 |
+| 地图配置 | AM-D15～D15.3 | 类型、完整配置、自定义样式、语言 |
+| 控件与手势 | AM-D16～D16.3 | UI、手势、缩放范围、地理范围 |
+| 定位功能 | AM-D17 | 权限与定位蓝点 |
+| 点标记与信息窗口 | AM-E50～E50.8 | 属性、初始与动态点位、图片、自定义窗口、原生形状与图片、单选、地图找房 |
+| 线与面覆盖物 | AM-D20 / D40～D40.2 | 多边形、折线、纹理、大地曲线 |
+| 地图控制 | AM-D03 / D04 / D05 | 相机、POI、截图 |
+| 性能对照 | AM-P01 | 固定数据 0 / 100 / 200 点 |
+
+编号参考腾讯 Demo 的组织方式，不代表两套 SDK 的功能完全相同。高德插件没有 SurfaceView 模式切换入口。
+
+原生点位示例使用的图片在 `assets/native_marker/`，该子目录已在 `pubspec.yaml` 中单独声明。
+
+### 地图找房（AM-E50.8）
+
+入口：点标记与信息窗口 → 地图找房，路由 `/house-map`。参考 `orion_miniapp` 地图找房页，在上海静安附近约 1.8km × 1.5km 的固定地理区域预置 300 套模拟房源，无需房源接口或定位权限。300 是房源库总数，每次只返回当前视野内的子集。
+
+- 价格气泡：白底黑字、16px 圆角、底部箭头；选中为 `#8540FD` 紫底白字并置顶。
+- 点击气泡打开半屏抽屉，并将气泡移到上方可见地图中央，保持当前缩放；切换房源同步更新内容。
+- 抽屉支持隐藏、半屏、近全屏三档，上拖后可滚动房型列表；拖动抽屉不移动地图。
+- 重复点击、地图空白处、关闭按钮和下拖隐藏均取消选择，关闭后保留地图视野。
+- 首屏及地图移动结束后查询房源（包括拖动、缩放和点击气泡聚焦）：防抖 250ms + 模拟网络延迟 700ms。根据原生投影获取完整视野，在固定房源库中按经纬度过滤；加载期间保留旧点，新结果就绪后替换。
+- 房源库使用固定种子生成一次，ID、坐标、价格和名称都不随请求变化。放大时显示数量减少；移出房源分布区返回空列表；移回原区域得到相同房源，不会补点凑数。
+- 顶部显示当前视野数量、房源库总数及查询次数。连续移动会丢弃过期结果。选中房源仍在查询结果中时保留选中态和抽屉，查询完成不再次聚焦；移出范围后取消选择并收起。
+
+Android 直达：`adb shell am start -n com.amap.flutter.amap_map_example/.MainActivity --es route /house-map`。
+
+## 性能测试
+
+- 基础流畅度先测 AM-D01。AM-P01 使用固定坐标、稳定 ID 和默认 Marker 图标，不代表原生点位方案。
+- AM-D02 的日志用独立的 `ValueNotifier` 面板，最多保留 50 条，相机移动日志最多每 250ms 更新一次，记录日志不会重建地图 Widget。
+- 对比时使用同一台真机、Release 包、相同视野与刷新率，等底图加载完成再测，避开省电模式和过热。
+- 页面不会把回调频率或 Flutter 帧率当作原生地图 FPS。深入测量请用 Profile 模式和 Android Perfetto / System Trace。
+
+## 自动化检查
+
+```bash
+flutter test
+flutter analyze --no-fatal-infos
+```
+
+Widget 测试覆盖菜单、路由、说明窗口和状态逻辑，不能代替 Android / iOS 真机上的显示与性能验收。
+
+全部 27 项示例测试通过，其中 13 项地图找房测试覆盖极小区域只返回已有房源、相邻视野房源一致性、空区域、返回原区域、过期查询丢弃、聚焦后查询及保留选择、相同视角去重及抽屉选择联动。新增代码静态检查通过。
+
+## 真机验证记录
+
+### 2026-10-26 Android（BRE-AL80，Release）
+
+- 固定 300 套房源版本：初始视野显示 300 套，拖至分布区边缘返回 80 套，继续移出区域显示暂无房源；相同视角重复回调已去重。缩放后的少量房源查询和房源数据稳定性另有自动化覆盖；未进行帧率测量。
+- 点击气泡聚焦后，查询次数由第 1 次变为第 2 次；选中气泡保持紫色、半屏抽屉保留，关闭后地图保持聚焦后的视野。
+- 以下为最初 5 点版本的交互记录：
+- AM-E50.8：白底价格气泡和“价格待定”正常显示；选中变紫色并打开对应公寓的半屏抽屉，气泡聚焦到抽屉上方。
+- 抽屉可展开至近全屏、下拖回半屏、继续下拖隐藏；关闭按钮和下拖隐藏均恢复未选中样式，保留地图视野。
+- 示例应用 `flutter test` 全部 20 项通过（含 6 项地图找房交互测试），新增页面和测试静态检查无问题。iOS 仅验证投影单位对应的通道调用，尚未真机验收。
+
+### 2026-10-22 Android（BRE-AL80，Release）
+
+- AM-D17：定位蓝点显示，首次定位自动聚焦到当前位置，支持手动回到当前位置。
+- AM-E50 / E50.2：添加后图标可见；计数反映 Dart 端期望数量，不代表原生已显示完成。
+- AM-E50.3：地图正常创建，起点图标可切换为终点图标。
+- AM-E50.4：添加后点击 Marker，Flutter 自定义窗口显示标题。
+- AM-D40.1：添加后绿色箭头纹理折线可见。
+- AM-D15.2：开关和资源读取已修复，协议测试确认开关与样式字节已发送；但内置样式开关前后真机底图没有明显变化，**视觉验收未通过**。原因尚不确定（旧样式文件、SDK 兼容或授权），需要用高德平台当前导出的有效样式文件对照验证。
+
+根因修复：Android asset 转换器原先读取未初始化的 FlutterLoader，改用 Flutter 引擎提供的 loader；位置转换误把海拔当作纬度校验，已改正；相机移动通道补上了成功应答；定位页会保留地图就绪前收到的位置，权限授予后再创建定位地图。
+
+以上结果只覆盖列出的主要操作，不能代替所有属性组合、iOS 和性能回归。

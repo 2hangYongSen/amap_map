@@ -25,6 +25,11 @@ class AMapController {
     _connectStreams(mapId);
   }
 
+  // 已建立的事件订阅，销毁时统一取消（R-DART-DISP）
+  final List<StreamSubscription<dynamic>> _subscriptions =
+      <StreamSubscription<dynamic>>[];
+  bool _disposed = false;
+
   ///根据传入的id初始化[AMapController]
   /// 主要用于在[AMapWidget]初始化时在[AMapWidget.onMapCreated]中初始化controller
   static Future<AMapController> init(
@@ -40,6 +45,19 @@ class AMapController {
     );
   }
 
+  /// 供 [AMapWidget] 使用：`map#waitForMap` 返回后若会话已失效，
+  /// 只清理通道、不建立订阅，返回 null（R-DART-DISP）。
+  static Future<AMapController?> _initForSession(
+      int id, _MapState state, bool Function() isStale) async {
+    await _methodChannel.init(id);
+    if (isStale()) {
+      _methodChannel.dispose(id: id);
+      return null;
+    }
+    return AMapController._(state.widget.initialCameraPosition, state,
+        mapId: id);
+  }
+
   ///只用于测试
   ///用于与native的通信
   @visibleForTesting
@@ -48,47 +66,111 @@ class AMapController {
   }
 
   void _connectStreams(int mapId) {
-    _methodChannel.onLocationChanged(mapId: mapId).listen(
-        (LocationChangedEvent e) =>
-            _mapState.widget.onLocationChanged?.call(e.value));
+    // 记录订阅，销毁时统一取消
+    void keep(StreamSubscription<dynamic> s) => _subscriptions.add(s);
 
-    _methodChannel.onCameraMove(mapId: mapId).listen((CameraMoveEvent e) {
+    keep(_methodChannel.onLocationChanged(mapId: mapId).listen(
+        (LocationChangedEvent e) =>
+            _mapState.widget.onLocationChanged?.call(e.value)));
+
+    keep(_methodChannel.onCameraMove(mapId: mapId).listen((CameraMoveEvent e) {
       _mapState.widget.onCameraMove?.call(e.value);
       if (_mapState.widget.infoWindowAdapter != null) {
         _mapState.updateMarkers();
       }
-    });
+    }));
 
-    _methodChannel.onCameraMoveEnd(mapId: mapId).listen((CameraMoveEndEvent e) {
+    keep(_methodChannel
+        .onCameraMoveEnd(mapId: mapId)
+        .listen((CameraMoveEndEvent e) {
       _mapState.widget.onCameraMoveEnd?.call(e.value);
-    });
-    _methodChannel
+    }));
+    keep(_methodChannel
         .onMapTap(mapId: mapId)
-        .listen(((MapTapEvent e) => _mapState.widget.onTap?.call(e.value)));
-    _methodChannel.onMapLongPress(mapId: mapId).listen(((MapLongPressEvent e) {
+        .listen(((MapTapEvent e) => _mapState.widget.onTap?.call(e.value))));
+    keep(_methodChannel
+        .onMapLongPress(mapId: mapId)
+        .listen(((MapLongPressEvent e) {
       _mapState.widget.onLongPress?.call(e.value);
-    }));
+    })));
 
-    _methodChannel.onPoiTouched(mapId: mapId).listen(((MapPoiTouchEvent e) {
+    keep(_methodChannel.onPoiTouched(mapId: mapId).listen(((MapPoiTouchEvent e) {
       _mapState.widget.onPoiTouched?.call(e.value);
+    })));
+
+    keep(_methodChannel.onMarkerTap(mapId: mapId).listen((MarkerTapEvent e) {
+      _mapState.onMarkerTap(e.value);
     }));
 
-    _methodChannel.onMarkerTap(mapId: mapId).listen((MarkerTapEvent e) {
-      _mapState.onMarkerTap(e.value);
-    });
-
-    _methodChannel.onMarkerDragEnd(mapId: mapId).listen((MarkerDragEndEvent e) {
+    keep(_methodChannel
+        .onMarkerDragEnd(mapId: mapId)
+        .listen((MarkerDragEndEvent e) {
       _mapState.onMarkerDragEnd(e.value, e.position);
-    });
+    }));
 
-    _methodChannel.onPolylineTap(mapId: mapId).listen((PolylineTapEvent e) {
+    keep(_methodChannel.onPolylineTap(mapId: mapId).listen((PolylineTapEvent e) {
       _mapState.onPolylineTap(e.value);
-    });
+    }));
+
+    // 新协议事件交给队列：握手前暂存，按 eventSeq 去重（R-INIT-4/5）
+    keep(_methodChannel
+        .onMarkerProtocolEvent(mapId: mapId)
+        .listen((MarkerProtocolEvent e) {
+      _mapState._markerQueue.handleMessage(e.value);
+    }));
   }
 
+  /// 发送队列使用的通道出口
+  MarkerSyncTransport get _markerTransport => _ControllerMarkerTransport(this);
+
+  /// 取消订阅并释放通道；幂等（R-DART-DISP）
   void disponse() {
+    if (_disposed) {
+      return;
+    }
+    _disposed = true;
+    for (final StreamSubscription<dynamic> s in _subscriptions) {
+      s.cancel();
+    }
+    _subscriptions.clear();
     _methodChannel.dispose(id: mapId);
   }
+
+  /// 设置原生选中点，返回原生提交后的 selectionRevision。
+  ///
+  /// 此 API 跳过地图 SDK 点击路径的双击判定等待，共用原生选择更新逻辑；
+  /// 不保证即时呈现。证据与耗时验证边界见 README「点位选择延迟」。
+  ///
+  /// 首次调用（包括传入 null）会启用新协议；地图已销毁或握手失败时抛出
+  /// [MarkerSyncException]。传入与当前相同的 id 不会产生选择事件。
+  Future<int> setSelectedMarker(String? markerId) =>
+      _mapState._markerQueue.setSelected(markerId);
+
+  /// 诊断：一次 `diag#ping` 时钟样本（R-TIME-3）。d0/d1 用 [MarkerDiagnosticsClock]。
+  /// 诊断未开启时原生返回错误，抛出 [PlatformException]。
+  Future<MarkerClockSample> pingNativeClock() async {
+    final double d0 = MarkerDiagnosticsClock.nowMs();
+    final Map<Object?, Object?>? r = await _methodChannel.diagPing(mapId: mapId);
+    final double d1 = MarkerDiagnosticsClock.nowMs();
+    final Object? n = r?['nativeMs'];
+    if (n is! num) {
+      throw StateError('diag#ping 返回缺少 nativeMs');
+    }
+    return MarkerClockSample(d0Ms: d0, nativeMs: n.toDouble(), d1Ms: d1);
+  }
+
+  /// 诊断：连续 ping [samples] 次（规格要求每轮采样前后各 20 次），取往返最短的样本估算时钟偏移
+  Future<MarkerClockCalibration> calibrateNativeClock({int samples = 20}) async {
+    final List<MarkerClockSample> out = <MarkerClockSample>[];
+    for (int i = 0; i < samples; i++) {
+      out.add(await pingNativeClock());
+    }
+    return MarkerClockCalibration.fromSamples(out);
+  }
+
+  /// 诊断：冷测试前清空原生合成位图缓存（§13.4）；诊断未开启时抛出 [PlatformException]
+  Future<void> clearNativeMarkerCaches() =>
+      _methodChannel.diagClearCaches(mapId: mapId);
 
   Future<void> _updateMapOptions(Map<String, dynamic> optionsUpdate) {
     return _methodChannel.updateMapOptions(optionsUpdate, mapId: mapId);
@@ -148,4 +230,34 @@ class AMapController {
   Future<String> getSatelliteImageApprovalNumber() {
     return _methodChannel.getSatelliteImageApprovalNumber(mapId: mapId);
   }
+}
+
+/// 把发送队列的请求转发到当前地图的 MethodChannel
+class _ControllerMarkerTransport implements MarkerSyncTransport {
+  _ControllerMarkerTransport(this._c);
+
+  final AMapController _c;
+
+  @override
+  Future<void> updateLegacy(MarkerUpdates updates) => _c._updateMarkers(updates);
+
+  @override
+  Future<Map<Object?, Object?>?> attach() =>
+      _methodChannel.attachMarkers(mapId: _c.mapId);
+
+  @override
+  Future<Map<Object?, Object?>?> update(Map<String, dynamic> payload) =>
+      _methodChannel.updateMarkersV2(payload, mapId: _c.mapId);
+
+  @override
+  Future<Map<Object?, Object?>?> resync(Map<String, dynamic> payload) =>
+      _methodChannel.resyncMarkers(payload, mapId: _c.mapId);
+
+  @override
+  Future<void> updateOptions(Map<String, dynamic> options) =>
+      _c._updateMapOptions(options);
+
+  @override
+  Future<Map<Object?, Object?>?> setSelected(String? markerId) =>
+      _methodChannel.setSelectedMarker(markerId, mapId: _c.mapId);
 }
